@@ -13,7 +13,7 @@ base=$(basename "$USM_DIR")
 if [ -f "mod_rapport.sti" ]; then
     mv mod_rapport.sti "$input_dir/mod_rapport_$base.sti"
 fi
+rm -rf "$USM_DIR"
 cd "$OLD_PWD"
 
 
-#rm -rf $USM_DIR

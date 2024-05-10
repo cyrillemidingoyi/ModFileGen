@@ -49,6 +49,7 @@ class SticsFicIniConverter(Converter):
             fileContent += "\n"
             fileContent += "\n"
             fileContent += "\n"
+            fileContent += "\n"
             fileContent += ":densinitial:" + "\n"
             fileContent += "     " + "\n"
             
