@@ -825,26 +825,35 @@ class SticsConverter(Converter):
         return file_content
         
     def process_chunk(self, chunk):
+
         # Apply series of functions to each row in the chunk
         weathertable = set()
         soiltable = set()
         tempopar = set()
         tectable = set()
         initable = set()
-        
+
+        ModelDictionary_Connection = sqlite3.connect(self.ModelDictionary)
+        MasterInput_Connection = sqlite3.connect(self.MasterInput)
+            
         for i, row in enumerate(chunk):
-            ModelDictionary_Connection = sqlite3.connect(self.ModelDictionary)
-            MasterInput_Connection = sqlite3.connect(self.MasterInput)
             print(f"Iteration {i}")
             # Création du chemin du fichier
             simPath = os.path.join(self.DirectoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
             usmdir = os.path.join(self.DirectoryPath, str(row["idsim"]))
+                
+            # Tempoparv6
             try:
-                # Tempoparv6
                 tempoparv6Converter = sticstempoparv6converter.SticsTempoparv6Converter()
                 tempoparv6Converter.export(self.tempoparfv6fix, usmdir)
-                # Tempopar
-                tempoparid =  row["idOption"]
+            except Exception as ex:
+                print("Error during Export STICS tempoparv6 :", ex)
+                traceback.print_exc()
+                sys.exit(1)
+                
+            # Tempopar
+            tempoparid =  row["idOption"]
+            try:
                 if tempoparid not in tempopar:
                     tempoparConverter = sticstempoparconverter.SticsTempoparConverter()
                     tempoparConverter.export(simPath, MasterInput_Connection, self.tempoparfix, usmdir)
@@ -853,13 +862,18 @@ class SticsConverter(Converter):
                         udir = os.path.join(self.DirectoryPath, str(r["idsim"]))
                         if not os.path.exists(udir):
                             Path(udir).mkdir(parents=True, exist_ok=True)
-                        shutil.copy(os.path.join(usmdir, "ficini.txt"), udir)
+                        shutil.copy(os.path.join(usmdir, "tempopar.sti"), udir)
                     tempopar.add(tempoparid)
                 else: 
                     pass
+            except Exception as ex:
+                print("Error during Export STICS tempopar  :", ex)
+                traceback.print_exc()
+                sys.exit(1)
 
-                # Station
-                # Param.Sol and Station # station and soil have same idsoil = idPoint
+            # Station
+            # Param.Sol and Station # station and soil have same idsoil = idPoint                
+            try:
                 soilid =  row["idsoil"]
                 if soilid not in soiltable:
                     paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
@@ -873,10 +887,21 @@ class SticsConverter(Converter):
                             Path(udir).mkdir(parents=True, exist_ok=True)
                         shutil.copy(os.path.join(usmdir, "param.sol"), udir)
                         shutil.copy(os.path.join(usmdir, "station.txt"), udir)
+                        shutil.copy(os.path.join(usmdir, "snow_variables.txt"), udir)
+                        shutil.copy(os.path.join(usmdir, "prof.mod"), udir)
+                        shutil.copy(os.path.join(usmdir, "rap.mod"), udir)
+                        shutil.copy(os.path.join(usmdir, "var.mod"), udir)
+                        
                     soiltable.add(soilid)
                 else: 
                     pass
-                # New Travail
+            except Exception as ex:
+                print("Error during Export STICS param.sol and station  :", ex)
+                traceback.print_exc()
+                sys.exit(1)                
+                
+            # New Travail
+            try:
                 newtravailconverter = sticsnewtravailconverter.SticsNewTravailConverter()
                 newtravailconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 # FicIni 
@@ -893,8 +918,14 @@ class SticsConverter(Converter):
                     initable.add(iniid)
                 else: 
                     pass
-
-                # climat
+            except Exception as ex:
+                print("Error during Export STICS ficini :", ex)
+                traceback.print_exc()
+                sys.exit(1)
+            
+            
+            # climat
+            try:
                 climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
                 if climid not in weathertable:
                     climatconverter = sticsclimatconverter.SticsClimatConverter()
@@ -908,8 +939,13 @@ class SticsConverter(Converter):
                     weathertable.add(climid)
                 else: 
                     pass
-             
-                # fictec1
+            except Exception as ex:
+                print("Error during Export STICS climat  :", ex)
+                traceback.print_exc()
+                sys.exit(1)
+                
+            # fictec1
+            try:
                 tecid =  ".".join([str(row["idMangt"]), str(row["idsoil"])])
                 if tecid not in tectable:
                     fictec1converter = sticsfictec1converter.SticsFictec1Converter()
@@ -923,22 +959,28 @@ class SticsConverter(Converter):
                     tectable.add(tecid)
                 else: 
                     pass
-
-                # ficplt1
-                ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
-                ficplt1converter.export(simPath, MasterInput_Connection, self.pltfolder, usmdir)
-
-                # run stics
-                bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
-                subprocess.run(["bash", bs, usmdir, self.DirectoryPath])
-                # 
             except Exception as ex:
-                print("Error during Export STICS  :", ex)
+                print("Error during Export STICS fictec1 :", ex)
                 traceback.print_exc()
                 sys.exit(1)
-                  
-            MasterInput_Connection.close()
-            ModelDictionary_Connection.close()
+            
+            # ficplt1
+            try:
+                ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
+                ficplt1converter.export(simPath, MasterInput_Connection, self.pltfolder, usmdir)
+            except Exception as ex:
+                print("Error during Export STICS ficplt1  :", ex)
+                traceback.print_exc()
+                sys.exit(1)
+            
+            # run stics
+            try:
+                bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
+                subprocess.run(["bash", bs, usmdir, self.DirectoryPath])
+            except Exception as ex:
+                print("Error during Running STICS  :", ex)
+                traceback.print_exc()
+                sys.exit(1)
                     
     def export(self):
         MasterInput_Connection = sqlite3.connect(self.MasterInput)
