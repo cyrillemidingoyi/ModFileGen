@@ -6,6 +6,7 @@ Home-page: https://gitlab.cirad.fr/modelingplatform/modelfilegen
 Author: Cyrille Ahmed Midingoyi
 Author-email: cyrille_ahmed.midingoyi@cirad.fr
 License: MIT
+Platform: UNKNOWN
 License-File: LICENSE
 
 # SpatialWeatherAPI 
@@ -52,3 +53,5 @@ SpatialWeatherAPI creation (2023-03-25)
 ---------------------------------------
 
 * First release on Conda.
+
+
