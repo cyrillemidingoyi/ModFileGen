@@ -7,6 +7,9 @@ input_dir="$2"
 
 cd "$USM_DIR"
 
+sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' "$USM_DIR"/tempopar.sti \
+    || echo "tempopar.sti not founded in $USM_DIR"
+
 /opt/stics/bin/stics_modulo
 
 base=$(basename "$USM_DIR")

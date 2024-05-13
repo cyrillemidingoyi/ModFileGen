@@ -14,7 +14,7 @@ GlobalVariables["dbMasterInput" ] = masterinput_f
  
 def test_sticsconverter():
     c = SticsConverter()
-    c.nthreads = 4
+    c.nthreads = 6
     c.DirectoryPath = directory_path
     c.pltfolder = os.path.join(data,"cultivars","stics")
     r = c.export()
