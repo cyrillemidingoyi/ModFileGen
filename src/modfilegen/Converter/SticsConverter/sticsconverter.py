@@ -15,6 +15,7 @@ from multiprocessing import Pool
 import pandas as pd
 from time import time
 import traceback
+from joblib import Parallel, delayed    
 
 
 class SticsConverter(Converter):
@@ -824,7 +825,7 @@ class SticsConverter(Converter):
         file_content += res + "\n"
         return file_content
         
-    def process_chunk(self, chunk):
+    def process_chunk(self, chunk, mi, md, tpv6):
 
         # Apply series of functions to each row in the chunk
         weathertable = set()
@@ -833,8 +834,8 @@ class SticsConverter(Converter):
         tectable = set()
         initable = set()
 
-        ModelDictionary_Connection = sqlite3.connect(self.ModelDictionary)
-        MasterInput_Connection = sqlite3.connect(self.MasterInput)
+        ModelDictionary_Connection = sqlite3.connect(md)
+        MasterInput_Connection = sqlite3.connect(mi)
             
         for i, row in enumerate(chunk):
             print(f"Iteration {i}")
@@ -845,7 +846,7 @@ class SticsConverter(Converter):
             # Tempoparv6
             try:
                 tempoparv6Converter = sticstempoparv6converter.SticsTempoparv6Converter()
-                tempoparv6Converter.export(self.tempoparfv6fix, usmdir)
+                tempoparv6Converter.export(tpv6, usmdir)
             except Exception as ex:
                 print("Error during Export STICS tempoparv6 :", ex)
                 traceback.print_exc()
@@ -1055,7 +1056,11 @@ class SticsConverter(Converter):
             start = time()
             with Pool(processes=self.nthreads) as pool:
                 # Apply the processing function to each chunk in parallel
-                processed_data_chunks = pool.map(self.process_chunk, chunks)  
+                mi = self.MasterInput
+                md = self.ModelDictionary
+                tpv6 = self.tempoparfv6fix
+                processed_data_chunks = pool.starmap(self.process_chunk,[(chunk,mi, md, tpv6 ) for chunk in chunks])  
+                #Parallel(n_jobs=self.nthreads)(delayed(self.process_chunk)(chunk,mi, md, tpv6) for chunk in chunks)
             print(f"total time, {time()-start}")
         except Exception as ex:          
             print("Export completed successfully!")
