@@ -56,7 +56,7 @@ class SticsStationConverter(Converter):
             fileContent += self.FormatSticsData(DT, "cvent")
             fileContent += self.FormatSticsData(DT, "phiv0")
             fileContent += self.FormatSticsData(DT, "coefrnet")
-
+        station = fileContent
         try:
             # Exporter le fichier vers le répertoire spécifié
             self.write_file(usmdir, file_name, fileContent)
@@ -67,6 +67,7 @@ class SticsStationConverter(Converter):
         fileContent = ""
         fileContent += "   0.00000000       0.00000000       0.00000000       0.00000000 "
         fileContent += "\n"
+        snow = fileContent
         try:
             # Exporter le fichier vers le répertoire spécifié
             self.write_file(usmdir, file_name, fileContent)
@@ -93,6 +94,7 @@ class SticsStationConverter(Converter):
             self.write_file(usmdir, file_name, fileContent)
         except Exception as e:
             print(f"Error during writing file : {e}")
+        return [station, snow]
 
     def  FormatSticsData(fileContent, row ,champ, precision = 5, fieldIt = 0):
         res = ""

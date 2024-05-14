@@ -90,4 +90,5 @@ class SticsFicIniConverter(Converter):
         except Exception as e:
             traceback.print_exc()
             print("Error during writing file : " + str(e))
+        return fileContent
 
