@@ -1,2 +1,3 @@
 [console_scripts]
 gen = modfilegen.main:main
+
