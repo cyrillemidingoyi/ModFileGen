@@ -7,7 +7,7 @@ input_dir="$2"
 
 cd "$USM_DIR"
 
-sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' $USM_DIR/tempopar.sti
+sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' "$USM_DIR"/tempopar.sti
 
 /opt/stics/bin/stics_modulo
 
