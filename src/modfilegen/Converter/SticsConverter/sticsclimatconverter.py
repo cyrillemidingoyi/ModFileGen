@@ -55,3 +55,5 @@ class SticsClimatConverter(Converter):
         except Exception as e:
             print("Error during writing file : " + str(e))
             traceback.print_exc()
+        
+        return fileContent

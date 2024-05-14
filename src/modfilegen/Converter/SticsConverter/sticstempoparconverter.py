@@ -35,4 +35,5 @@ class SticsTempoparConverter(Converter):
             self.write_file(usmdir, file_name, fileContent)
         except Exception as e:
             print(f"Error during writing file : {e}")
+        return fileContent
 
