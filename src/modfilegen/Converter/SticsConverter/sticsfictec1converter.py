@@ -196,6 +196,8 @@ class SticsFictec1Converter(Converter):
         except Exception as e:
             print("Error during writing file : " + str(e))
             traceback.print_exc()
+        
+        return fileContent
 
     def format_item(self, row, champ, precision = 5, fieldIt = 0):
         fieldName = champ

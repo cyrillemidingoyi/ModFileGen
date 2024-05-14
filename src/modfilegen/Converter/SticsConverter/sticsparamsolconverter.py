@@ -178,5 +178,6 @@ class SticsParamSolConverter(Converter):
         except Exception as e:
             traceback.print_exc()
             print(f"Error during writing file : {e}")
+        return fileContent
             
 

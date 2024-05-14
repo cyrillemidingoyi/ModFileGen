@@ -11,8 +11,6 @@ sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' "$USM_DIR"/tempopar.sti
 
 /opt/stics/bin/stics_modulo
 
-
-
 base=$(basename "$USM_DIR")
 if [ -f "mod_rapport.sti" ]; then
     mv mod_rapport.sti "$input_dir/mod_rapport_$base.sti"
