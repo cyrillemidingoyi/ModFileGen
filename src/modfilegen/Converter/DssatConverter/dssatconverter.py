@@ -72,7 +72,7 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
-            subprocess.run(["bash", bs, usmdir, directoryPath, dt])
+            subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
             
         except Exception as ex:
             print("Error during Running Dssat  :", ex)
