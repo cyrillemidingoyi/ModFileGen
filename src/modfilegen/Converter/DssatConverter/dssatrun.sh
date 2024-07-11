@@ -4,7 +4,9 @@ OLD_PWD="${PWD}"
 
 USM_DIR="$1"
 input_dir="$2"
-dt=$3
+# convert dt to integer
+dt=$(echo $3 | awk '{print int($1)}')
+
 
 cd "$USM_DIR"
 

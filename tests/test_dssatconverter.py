@@ -14,6 +14,7 @@ GlobalVariables["dbMasterInput" ] = masterinput_f
 GlobalVariables["directorypath"] = data   # contains the path of list of USM
 GlobalVariables["pltfolder"] = os.path.join(data,"cultivars","dssat") # path of cultivars
 GlobalVariables["nthreads"] = 4
+GlobalVariables["dt"] = 0
 
 def test_dssatconverter():
     dssatconverter.main()
