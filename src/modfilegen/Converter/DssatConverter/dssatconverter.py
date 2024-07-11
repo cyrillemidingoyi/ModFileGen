@@ -19,7 +19,7 @@ def write_file(directory, filename, content):
     with open(os.path.join(directory, filename), "w") as f:
         f.write(content)
         
-def process_chunk(chunk, mi, md, directoryPath,pltfolder):
+def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
 
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -72,7 +72,7 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder):
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
-            subprocess.run(["bash", bs, usmdir, directoryPath])
+            subprocess.run(["bash", bs, usmdir, directoryPath, dt])
             
         except Exception as ex:
             print("Error during Running Dssat  :", ex)
@@ -148,6 +148,7 @@ def main():
     directoryPath = GlobalVariables["directorypath"]
     pltfolder = GlobalVariables["pltfolder"]
     nthreads = GlobalVariables["nthreads"]
+    dt = GlobalVariables["dt"]
     export(mi, md)
 
     data = fetch_data_from_sqlite(mi)
@@ -158,7 +159,7 @@ def main():
         start = time()
         with Pool(processes=nthreads) as pool:
             # Apply the processing function to each chunk in parallel
-            processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder) for chunk in chunks])  
+            processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
             #Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder) for chunk in chunks)
         print(f"total time, {time()-start}")
     except Exception as ex:      
