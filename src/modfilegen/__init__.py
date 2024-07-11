@@ -7,4 +7,5 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                                             #' Public RepSource As String = "D:\donneesFA\modelisation\Arise\dataMillArise\AppliDatamill"
                      "dbMasterInput" : "",
                     "dbModelsDictionary" : "",
-                    "dbCelsius" : ""}
+                    "dbCelsius" : "",
+                    "dt" : 1}
