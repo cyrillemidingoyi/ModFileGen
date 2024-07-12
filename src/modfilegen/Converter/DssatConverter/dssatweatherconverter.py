@@ -71,7 +71,7 @@ class DssatweatherConverter(Converter):
                 file_name = ""
                 for row in rows1:
                     fileContent =  ""
-                    fileNameArray[0] = Mngt.capitalize() 
+                    fileNameArray[0] = Mngt.upper() 
                     fileNameArray[1] = str(Year)[2:4]
                     fileContent += f"*WEATHER DATA : {Site} , {str(Year)}\n\n"
                     fileContent += "@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\n"
