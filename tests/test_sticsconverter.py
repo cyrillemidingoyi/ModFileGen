@@ -11,6 +11,7 @@ directory_path = data
 
 GlobalVariables["dbModelsDictionary" ] = modeldictionnary_f     
 GlobalVariables["dbMasterInput" ] = masterinput_f 
+GlobalVariables["dt"] = 0
  
 def test_sticsconverter():
     c = SticsConverter()
