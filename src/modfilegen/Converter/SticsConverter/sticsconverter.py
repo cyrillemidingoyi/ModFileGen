@@ -816,7 +816,7 @@ def write_file(directory, filename, content):
     with open(os.path.join(directory, filename), "w") as f:
         f.write(content)
         
-def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof):
+def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt):
 
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -901,7 +901,7 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
 
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
-            subprocess.run(["bash", bs, usmdir, directoryPath])
+            subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
         except Exception as ex:
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
@@ -978,11 +978,12 @@ def main():
     directoryPath = GlobalVariables["directorypath"]
     pltfolder = GlobalVariables["pltfolder"]
     nthreads = GlobalVariables["nthreads"]
+    dt = GlobalVariables["dt"]
     export(mi, md)
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
     rap = common_rap()
-    var = common_prof()
+    var = common_var()
     prof = common_prof()
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
@@ -992,7 +993,7 @@ def main():
         start = time()
         with Pool(processes=nthreads) as pool:
             # Apply the processing function to each chunk in parallel
-            processed_data_chunks = pool.starmap(process_chunk,[(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof ) for chunk in chunks])  
+            processed_data_chunks = pool.starmap(process_chunk,[(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks])  
             #Parallel(n_jobs=self.nthreads)(delayed(self.process_chunk)(chunk,mi, md, tpv6) for chunk in chunks)
         print(f"total time, {time()-start}")
     except Exception as ex:      
