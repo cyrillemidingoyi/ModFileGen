@@ -13,7 +13,8 @@ GlobalVariables["dbModelsDictionary" ] = modeldictionnary_f
 GlobalVariables["dbMasterInput" ] = masterinput_f 
 GlobalVariables["directorypath"] = data   # contains the path of list of USM
 GlobalVariables["pltfolder"] = os.path.join(data,"cultivars","stics") # path of cultivars
-GlobalVariables["nthreads"] = 6
+GlobalVariables["nthreads"] = 4
+GlobalVariables["dt"] = 1
 
 def test_sticsconverter():
     sticsconverter.main()
