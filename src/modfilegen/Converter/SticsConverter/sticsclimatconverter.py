@@ -34,13 +34,19 @@ class SticsClimatConverter(Converter):
             maxtemp = row["tmax"]
             fileContent += format(maxtemp, ".1f").rjust(7)
             gradiation = row["srad"]
-            fileContent += format(gradiation, ".1f").rjust(7)
+            if gradiation is not None: 
+                fileContent += format(gradiation, ".1f").rjust(7)
+            else:
+                fileContent += " ".rjust(7)
             ppet = row["Etppm"]
             fileContent += format(ppet, ".1f").rjust(7)
             precipitation = row["rain"]
             fileContent += format(precipitation, ".1f").rjust(7)
             vent = row["wind"]
-            fileContent += format(vent, ".1f").rjust(7)
+            if vent is not None: 
+                fileContent += format(vent, ".1f").rjust(7)
+            else:
+                fileContent += " ".rjust(7)
             #surfpress = row["Surfpress"]
             rw = DT[DT["Champ"] == "vapeurp"]
             Dv = rw["dv"].values[0]
