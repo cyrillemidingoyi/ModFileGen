@@ -22,8 +22,10 @@ class DssatCultivarConverter(Converter):
         
         if not os.path.exists(usmdir):
             os.makedirs(usmdir)
+        # copy src_path_eco to usmdir if it exists
+        if os.path.exists(src_path_eco):
+            shutil.copy(src_path_eco, usmdir)
         shutil.copy(src_path_cul, usmdir)
-        shutil.copy(src_path_eco, usmdir)
         shutil.copy(src_path_spe, usmdir)
         return rows[0]["crop"]
         #return src_path_cul, src_path_eco, src_path_spe
