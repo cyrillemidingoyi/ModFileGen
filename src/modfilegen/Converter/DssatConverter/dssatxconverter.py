@@ -247,9 +247,7 @@ def writeBlockCultivar(dssat_tableName, idMangt, modelDictionary_Connection, mas
     rw = DT[DT["Champ"] == "LNCU"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_cultivars["C"].format(float(Dv))
-    rw = DT[DT["Champ"] == "CG"]
-    Dv = rw["dv"].values[0]
-    fileContent += v_fmt_cultivars["CR"].format(Dv)
+    fileContent += v_fmt_cultivars["CR"].format(dataTable["CG"].values[0])
     fileContent += v_fmt_cultivars["INGENO"].format(dataTable["IdcultivarDssat"].values[0])
     fileContent += " "
     fileContent += v_fmt_cultivars["CNAME"].format(dataTable["CodCultivar"].values[0]) + "\n"
