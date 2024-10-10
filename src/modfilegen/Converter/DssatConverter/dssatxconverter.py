@@ -932,6 +932,19 @@ def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connectio
     fileContent = ""
     storeKeyDataN = 0
     storeNumMaxSimu = 1
+    dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = 'dssat_x_simulation_management' ))";
+    DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
+    rw = DT[DT["Champ"] == "IPLTI"]
+    Dv_planting = rw["dv"].values[0]
+    rw = DT[DT["Champ"] == "IIRRI"]
+    Dv_irri = rw["dv"].values[0]
+    rw = DT[DT["Champ"] == "IFERI"]
+    Dv_ferti = rw["dv"].values[0]
+    rw = DT[DT["Champ"] == "IHARI"]
+    Dv_hari = rw["dv"].values[0]
+    rw = DT[DT["Champ"] == "IRESI"]
+    Dv_resi = rw["dv"].values[0]
+
     while storeNumMaxSimu > storeKeyDataN:
         storeKeyDataN = storeKeyDataN + 1
         dssat_tableId1 = "dssat_x_exp_id"
@@ -946,12 +959,12 @@ def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connectio
         dssat_tableName1 = "dssat_x_simulation_outputs"
         fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
         fileContent += "\n"
-        z = 0
-        if z!=0:
+        #z = 0
+        if Dv_planting=="A" or Dv_irri=="A" or Dv_ferti=="A" or Dv_hari=="A" or Dv_resi=="A":
             fileContent += "@  AUTOMATIC MANAGEMENT"
             fileContent += "\n"
             dssat_tableName1 = "dssat_x_automatic_planting"
-            fileContent += writeBlockAutomaticPlanting(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
+            fileContent += writeBlockAutomaticPlanting(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection, master_input_connection)
             dssat_tableName1 = "dssat_x_automatic_irrigation"
             fileContent += writeBlockAutomaticIrrigation(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
             dssat_tableName1 = "dssat_x_automatic_nitrogen"
@@ -1185,11 +1198,15 @@ def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Con
     return fileContent
 
 
-def writeBlockAutomaticPlanting(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection):
+def writeBlockAutomaticPlanting(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, master_input_connection):
     fileContent = ""
     siteColumnsHeader = "@N PLANTING    PFRST PLAST PH2OL PH2OU PH2OD PSTMX PSTMN"
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
+
+    fetchAllQuery = "SELECT SimUnitList.idsim, SimUnitList.StartYear, SimUnitList.EndYear FROM SimUnitList  Where Idsim ='%s';"%(idSim)
+    dataTable = pd.read_sql_query(fetchAllQuery, master_input_connection)
+    
     fileContent += siteColumnsHeader + "\n"
     rw = DT[DT["Champ"] == "LNSIM"]
     Dv = rw["dv"].values[0]
@@ -1199,10 +1216,15 @@ def writeBlockAutomaticPlanting(dssat_tableName, dssat_tableId, idSim, modelDict
     fileContent += v_fmt_simulation["PLANTING"].format(Dv.strip())
     rw = DT[DT["Champ"] == "PWDINF"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["PFRST"].format(format(int(Dv), "05"))
+    fileContent += v_fmt_simulation["PFRST"].format(str(dataTable["StartYear"].values[0])[2:4] + format(int(Dv), "03"))
+    #fileContent += v_fmt_simulation["PFRST"].format(format(int(Dv), "05"))
     rw = DT[DT["Champ"] == "PWDINL"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["PLAST"].format(format(int(Dv), "05"))
+    if int(Dv) > 365: 
+        fileContent += v_fmt_simulation["PLAST"].format(str(int(dataTable["StartYear"].values[0])+1)[2:4] + format(int(Dv) - 365, "03"))
+    else:
+        fileContent += v_fmt_simulation["PLAST"].format(str(dataTable["StartYear"].values[0])[2:4] + format(int(Dv), "03"))
+    #fileContent += v_fmt_simulation["PLAST"].format(format(int(Dv), "05"))
     rw = DT[DT["Champ"] == "SWPLTL"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_simulation["PH2OL"].format(int(Dv))
