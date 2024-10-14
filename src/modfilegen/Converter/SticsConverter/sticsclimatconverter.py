@@ -39,7 +39,7 @@ class SticsClimatConverter(Converter):
             else:
                 fileContent += format(-999.9, ".1f").rjust(7)
             ppet = row["Etppm"]
-            fileContent += format(ppet, ".1f").rjust(7)
+            fileContent += format(ppet, ".3f").rjust(7)
             precipitation = row["rain"]
             fileContent += format(precipitation, ".1f").rjust(7)
             vent = row["wind"]
