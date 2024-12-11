@@ -169,8 +169,8 @@ class DssatSoilConverter(Converter):
                         fileContent += v_fmt["SLB"].format(30)
                     else:
                         fileContent += v_fmt["SLB"].format(rows1[0]["SoilTotalDepth"])
-                    fileContent += v_fmt["SLPX"].format(rows1[0]["extp"])  
-                    fileContent += v_fmt["SLPT"].format(rows1[0]["totp"]) 
+                    fileContent += v_fmt["SLPX"].format(rows1[0]["Soil.extp"])  
+                    fileContent += v_fmt["SLPT"].format(rows1[0]["Soil.totp"]) 
                     fileContent += v_fmt["SLPO"].format(-99)
                     fileContent += v_fmt["CACO3"].format(-99)
                     fileContent += v_fmt["SLAL"].format(-99)
