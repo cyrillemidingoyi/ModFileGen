@@ -2,7 +2,7 @@ from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
 from . import dssatweatherconverter, dssatcultivarconverter, dssatsoilconverter, dssatxconverter
 import sys, subprocess, shutil
-
+import concurrent.futures
 
 import os
 import datetime
@@ -161,6 +161,10 @@ def main():
             # Apply the processing function to each chunk in parallel
             processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
             #Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder) for chunk in chunks)
+
+        #with concurrent.futures.ThreadPoolExecutor(nthreads) as executor: # to test
+            #executor.map(process_chunk, [(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])        
+        
         print(f"total time, {time()-start}")
     except Exception as ex:      
         print("Export completed successfully!")
