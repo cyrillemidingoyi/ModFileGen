@@ -69,9 +69,16 @@ class DssatSoilConverter(Converter):
             fileContent += v_fmt["SMKE"].format(Dv)+ "\n"
             fileContent += "@  SLB  SLMH  SLLL  SDUL  SSAT  SRGF  SSKS  SBDM  SLOC  SLCL  SLSI  SLCF  SLNI  SLHW  SLHB  SCEC  SADC" +"\n"
             
-            fetchAllQuery1 = """Select Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd AS 'Soil.bd', Soil.OrganicC AS 'Soil.OrganicC', Soil.Cf AS 'Soil.Cf', Soil.pH AS 'Soil.pH', Soil.SoilOption AS 'SoilOption', Soil.OrganicNStock AS 'OrganicNStock', Soil.SoilTotalDepth AS 'SoilTotalDepth', 
-                    SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', SoilLayers.bd AS 'SoilLayers.bd', SoilLayers.OrganicC AS 'SoilLayers.OrganicC', SoilLayers.Clay AS 'SoilLayers.Clay', SoilLayers.Silt AS 'SoilLayers.Silt', SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH', SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN',
-                    Soiltypes.Clay AS 'Soiltypes.Clay', SoilTypes.Silt AS 'SoilTypes.Silt' FROM SoilTypes INNER JOIN Soil On lower(SoilTypes.SoilTextureType) = Lower(Soil.SoilTextureType) LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = "%s" ;"""%(idSoil.lower())
+            fetchAllQuery1 = """Select Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd AS 'Soil.bd', Soil.OrganicC AS 'Soil.OrganicC', 
+                                        Soil.Cf AS 'Soil.Cf', Soil.pH AS 'Soil.pH', Soil.extp AS 'Soil.extp', Soil.totp AS 'Soil.totp', 
+                                        Soil.sand AS 'Soil.sand', Soil.clay AS 'Soil.clay', Soil.silt AS 'Soil.silt',
+                                        Soil.SoilOption AS 'SoilOption', Soil.OrganicNStock AS 'OrganicNStock', 
+                                        Soil.SoilTotalDepth AS 'SoilTotalDepth', 
+                                        SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', 
+                                        SoilLayers.bd AS 'SoilLayers.bd', SoilLayers.OrganicC AS 'SoilLayers.OrganicC', 
+                                        SoilLayers.Clay AS 'SoilLayers.Clay', SoilLayers.Silt AS 'SoilLayers.Silt', 
+                                        SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH', 
+                                        SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN' FROM SOIL LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = "%s" ;"""%(idSoil.lower())
             DA1 = pd.read_sql_query(fetchAllQuery1, master_input_connection)
             rows1 = DA1.to_dict(orient='records')
             if rows1[0]["SoilOption"] == "simple":
@@ -99,8 +106,8 @@ class DssatSoilConverter(Converter):
                         fileContent += v_fmt["SLOC"].format(rows1[0]["Soil.OrganicC"])
                     else:
                         fileContent += v_fmt["SLOC"].format(0)
-                    fileContent += v_fmt["SLCL"].format(rows1[0]["Soiltypes.Clay"])
-                    fileContent += v_fmt["SLSI"].format(rows1[0]["SoilTypes.Silt"])
+                    fileContent += v_fmt["SLCL"].format(rows1[0]["Soil.Clay"])
+                    fileContent += v_fmt["SLSI"].format(rows1[0]["Soil.Silt"])
                     fileContent += v_fmt["SLCF"].format(rows1[0]["Soil.Cf"])
                     if i == 0:
                         fileContent += v_fmt["SLNI"].format(rows1[0]["OrganicNStock"])
