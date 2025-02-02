@@ -106,8 +106,8 @@ class DssatSoilConverter(Converter):
                         fileContent += v_fmt["SLOC"].format(rows1[0]["Soil.OrganicC"])
                     else:
                         fileContent += v_fmt["SLOC"].format(0)
-                    fileContent += v_fmt["SLCL"].format(rows1[0]["Soil.Clay"])
-                    fileContent += v_fmt["SLSI"].format(rows1[0]["Soil.Silt"])
+                    fileContent += v_fmt["SLCL"].format(rows1[0]["Soil.clay"])
+                    fileContent += v_fmt["SLSI"].format(rows1[0]["Soil.silt"])
                     fileContent += v_fmt["SLCF"].format(rows1[0]["Soil.Cf"])
                     if i == 0:
                         fileContent += v_fmt["SLNI"].format(rows1[0]["OrganicNStock"])
