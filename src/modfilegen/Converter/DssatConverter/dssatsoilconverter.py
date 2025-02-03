@@ -169,7 +169,7 @@ class DssatSoilConverter(Converter):
                         fileContent += format(-99, "6.0f") + '\n'
                     else: fileContent += v_fmt["SADC"].format(float(Dv))+ "\n"
             
-            fileContent += "SLB  SLPX  SLPT  SLPO CACO3  SLAL  SLFE  SLMN  SLBS  SLPA  SLPB  SLKE  SLMG  SLNA  SLSU  SLEC  SLCA" +"\n"
+            fileContent += "@  SLB  SLPX  SLPT  SLPO CACO3  SLAL  SLFE  SLMN  SLBS  SLPA  SLPB  SLKE  SLMG  SLNA  SLSU  SLEC  SLCA" +"\n"
             if rows1[0]["SoilOption"] == "simple":
                 for i in range(0, 2):
                     if i == 0:
@@ -178,20 +178,20 @@ class DssatSoilConverter(Converter):
                         fileContent += v_fmt["SLB"].format(rows1[0]["SoilTotalDepth"])
                     fileContent += v_fmt["SLPX"].format(rows1[0]["Soil.extp"])  
                     fileContent += v_fmt["SLPT"].format(rows1[0]["Soil.totp"]) 
-                    fileContent += v_fmt["SLPO"].format(-99)
-                    fileContent += v_fmt["CACO3"].format(-99)
-                    fileContent += v_fmt["SLAL"].format(-99)
-                    fileContent += v_fmt["SLFE"].format(-99)
-                    fileContent += v_fmt["SLMN"].format(-99)
-                    fileContent += v_fmt["SLBS"].format(-99)
-                    fileContent += v_fmt["SLPA"].format(-99)
-                    fileContent += v_fmt["SLPB"].format(-99)
-                    fileContent += v_fmt["SLKE"].format(-99)
-                    fileContent += v_fmt["SLMG"].format(-99)
-                    fileContent += v_fmt["SLNA"].format(-99)
-                    fileContent += v_fmt["SLSU"].format(-99)
-                    fileContent += v_fmt["SLEC"].format(-99)
-                    fileContent += v_fmt["SLCA"].format(-99)+ "\n"         
+                    fileContent += format(-99, "6.0f") # v_fmt["SLPO"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["CACO3"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLAL"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLFE"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLMN"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLBS"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLPA"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLPB"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLKE"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLMG"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLNA"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLSU"].format(-99)
+                    fileContent += format(-99, "6.0f") # v_fmt["SLEC"].format(-99)
+                    fileContent += format(-99, "6.0f") + "\n" # v_fmt["SLCA"].format(-99)+ "\n"         
             fileContent += "\n"    
 
 
