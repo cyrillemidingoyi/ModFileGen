@@ -14,7 +14,7 @@ class SticsParamSolConverter(Converter):
         ST = directory_path.split(os.sep)
         T = "Select  Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'stics') And ([Table] = 'st_param_sol'));"
         DT = pd.read_sql_query(T,ModelDictionary_Connection) 
-        fetchAllQuery = """SELECT Soil.IdSoil,Soil.SoilOption, Soil.OrganicC,Soil.OrganicNStock, Soil.SoilRDepth, Soil.SoilTotalDepth, Soil.SoilTextureType, Soil.Wwp, Soil.Wfc, Soil.bd, Soil.albedo, Soil.Ph, Soil.cf, RunoffTypes.RunoffCoefBSoil, Soil.Clay
+        fetchAllQuery = """SELECT Soil.IdSoil,Soil.SoilOption, Soil.OrganicC,Soil.OrganicNStock as "OrganicNStock", Soil.SoilRDepth, Soil.SoilTotalDepth, Soil.SoilTextureType, Soil.Wwp, Soil.Wfc, Soil.bd, Soil.albedo, Soil.Ph as "pH", Soil.cf, RunoffTypes.RunoffCoefBSoil as "RunoffCoefBSoil", Soil.Clay as "Clay"
         FROM RunoffTypes INNER JOIN (Soil INNER JOIN SimUnitList ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)) ON RunoffTypes.RunoffType = Soil.RunoffType
         where idSim='%s';"""%(ST[-3])
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
