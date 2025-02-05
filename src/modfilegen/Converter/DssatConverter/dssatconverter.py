@@ -3,7 +3,7 @@ from modfilegen.converter import Converter
 from . import dssatweatherconverter, dssatcultivarconverter, dssatsoilconverter, dssatxconverter
 import sys, subprocess, shutil
 import concurrent.futures
-
+import numpy as np
 import os
 import datetime
 import sqlite3
@@ -13,14 +13,49 @@ from multiprocessing import Pool
 import pandas as pd
 from time import time
 import traceback
-from joblib import Parallel, delayed    
+from joblib import Parallel, delayed   
+import re 
+
+
+def get_coord(d):
+    res = re.findall("([-]?\d+[.]?\d+)[_]", d)
+    lat = float(res[0])
+    lon = float(res[1])
+    year = int(float(res[2]))
+    return {'lon': lon, 'lat': lat, 'year': year}
+
+
+def transform(fil):
+    with open(fil, "r") as fil_:
+        FILE = fil_.readlines()
+    #d_name = os.path.dirname(fil).split(os.path.sep)[-1]
+    d_name = Path(fil).stem[len("Summary_"):]
+    c = get_coord(d_name)
+    outData = FILE[4:]
+    varId = FILE[3]					# Read the raw variables
+    varId = list(map(str, str.split(varId[1:])[13:]))		# Only get the useful variables
+    nYear = np.size(outData)
+    dataArr = [list(map(float, str.split(outData[i])[13:]))
+		                   for i in range(nYear)][0]   
+    df = pd.DataFrame({varId[i]: [dataArr[i]] for i in range(len(varId))})
+    df = df.reset_index().rename(columns={"PDAT": "Planting","EDAT":"Emergence","ADAT":"Ant","MDAT":"Mat","CWAM":"Biom_ma","HWAM":"Yield","H#AM":'GNumber',"LAIX":"MaxLai","NLCM":"Nleac","NIAM":"SoilN","CNAM":"CroN_ma","ESCP":"CumE","EPCP":"Transp"})
+    df.insert(0, "Model", "Dssat")
+    df.insert(1, "Idsim", d_name)
+    df.insert(2, "Texte", "")
+
+    df['lon'] = c['lon']
+    df['lat'] = c['lat']
+    df['time'] = int(c['year'])
+
+    return df
+    
 
 def write_file(directory, filename, content):
     with open(os.path.join(directory, filename), "w") as f:
         f.write(content)
         
 def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
-
+    dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
     soiltable = {}
@@ -73,11 +108,15 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
-            
+            summary = os.path.join(directoryPath, f"Summary_{str(row['idsim'])}.OUT")
+            df = transform(summary)
+            dataframes.append(df)
+            if dt==1: os.remove(summary)            
         except Exception as ex:
             print("Error during Running Dssat  :", ex)
             traceback.print_exc()
             sys.exit(1)
+    return pd.concat(dataframes, ignore_index=True)
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -151,6 +190,14 @@ def main():
     dt = GlobalVariables["dt"]
     export(mi, md)
 
+    import uuid
+    # create a random name
+    result_name = str(uuid.uuid4()) + "_dssat"
+    result_path = os.path.join(directoryPath, f"{result_name}.csv")
+    while os.path.exists(result_path):
+        result_name = str(uuid.uuid4()) + "_dssat"
+        result_path = os.path.join(directoryPath, f"{result_name}.csv")
+
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
     chunks = chunk_data(data, chunk_size=nthreads)
@@ -162,12 +209,11 @@ def main():
             processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
             #Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder) for chunk in chunks)
 
-        #with concurrent.futures.ThreadPoolExecutor(nthreads) as executor: # to test
-            #executor.map(process_chunk, [(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])        
-        
+        processed_data = pd.concat(processed_data_chunks, ignore_index=True)
+        processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
         print(f"total time, {time()-start}")
     except Exception as ex:      
-        print("Export completed successfully!")
+        print("Export not completed successfully!")
 
 if __name__ == "__main__":
     main()
