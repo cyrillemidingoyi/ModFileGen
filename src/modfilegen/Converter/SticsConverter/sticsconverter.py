@@ -4,8 +4,7 @@ from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailcon
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
 import sys, subprocess, shutil
-
-
+import re
 import os
 import datetime
 import sqlite3
@@ -16,6 +15,37 @@ import pandas as pd
 from time import time
 import traceback
 from joblib import Parallel, delayed    
+
+
+def get_coord(d):
+    res = re.findall("([-]?\d+[.]?\d+)[_]", d)
+    lat = float(res[0])
+    lon = float(res[1])
+    year = int(float(res[2]))
+    return {'lon': lon, 'lat': lat, 'year': year}
+
+def remove_comma(f):
+    with open(f, "r") as fil:
+        cod =fil.readlines()
+    if cod[-1].endswith(";\n"):
+        cod[-1] = cod[-1].replace(";\n", "\n")
+    with open(f, "w") as fil:
+        fil.writelines(cod)
+    
+def create_df_summary(f):
+    #d_name = os.path.dirname(f).split(os.path.sep)[-1]
+    d_name = Path(f).stem[len("mod_rapport_"):]
+    remove_comma(f)
+    c = get_coord(d_name)
+    df = pd.read_csv(f, sep=';', skipinitialspace=True)
+    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
+    df.insert(0, "Model", "Stics")
+    df.insert(1, "Idsim", d_name)
+    df.insert(2, "Texte", "")
+    df['time'] = df['ansemis'].astype(float).astype(int)
+    df['lon'] = c['lon']
+    df['lat'] = c['lat']
+    return df
 
 
 
@@ -817,7 +847,7 @@ def write_file(directory, filename, content):
         f.write(content)
         
 def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt):
-
+    dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
     soiltable = {}
@@ -902,10 +932,17 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
+            # get the file "mod_rapport.sti" in the usmdir directory
+            mod_r = os.path.join(directoryPath, f"mod_rapport_{str(row['idsim'])}.sti") 
+            df = create_df_summary(mod_r)
+            dataframes.append(df)
+            if dt==1: os.remove(mod_r)
+            
         except Exception as ex:
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
             sys.exit(1)
+    return pd.concat(dataframes, ignore_index=True)
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -924,8 +961,6 @@ def export(MasterInput, ModelDictionary):
     except Exception as ex:
         print(f"Connection Error: {ex}")
     
-    '''if not os.path.exists(self.DirectoryPath):
-        os.makedirs(self, self.DirectoryPath)'''
 
     try:
         cursor = MasterInput_Connection.cursor()
@@ -989,6 +1024,13 @@ def main():
     # Split data into chunks
     chunks = chunk_data(data, chunk_size=nthreads)
     # Create a Pool of worker processes
+    import uuid
+    # create a random name
+    result_name = str(uuid.uuid4()) + "_stics"
+    result_path = os.path.join(directoryPath, f"{result_name}.csv")
+    while os.path.exists(result_path):
+        result_name = str(uuid.uuid4()) + "_stics"
+        result_path = os.path.join(directoryPath, f"{result_name}.csv")
     try:
         start = time()
         with Pool(processes=nthreads) as pool:
@@ -996,8 +1038,11 @@ def main():
             processed_data_chunks = pool.starmap(process_chunk,[(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks])  
             #Parallel(n_jobs=self.nthreads)(delayed(self.process_chunk)(chunk,mi, md, tpv6) for chunk in chunks)
         print(f"total time, {time()-start}")
-    except Exception as ex:      
-        print("Export completed successfully!")
-
+        
+        processed_data = pd.concat(processed_data_chunks, ignore_index=True)
+        processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
+    except Exception as ex:          
+            print("Export not completed successfully!")
+    
 if __name__ == "__main__":
     main()
