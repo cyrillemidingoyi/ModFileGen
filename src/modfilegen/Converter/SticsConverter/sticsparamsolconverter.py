@@ -112,7 +112,7 @@ class SticsParamSolConverter(Converter):
             fileContent += format(float(Dv), ".4f") + " "
             fileContent += "\n"
             
-            sql = f"""Select * From soillayers where idsoil = "{row['IdSoil'].lower()}" Order by NumLayer"""
+            sql = f"""Select * From soillayers where idsoil = '{row['IdSoil'].lower()}' Order by NumLayer"""
             DA2 = pd.read_sql_query(sql, master_input_connection)
             rows = DA2.to_dict(orient='records')
             for i in range(5):
