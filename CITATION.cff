@@ -1,0 +1,62 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  SharedSchemaModelsData : standardized database schemas designed to support crop modeling workflows, 
+  including input preparation, simulation configuration, and output storage
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Michel
+    family-names: Giner
+    email: michel.giner@cirad.fr
+    affiliation: CIRAD
+  - given-names: Francois 
+    family-names: AFFHOLDER
+    email: francois.affholder@cirad.fr
+    affiliation: CIRAD
+    orcid: 'https://orcid.org/0000-0002-2555-761X'
+  - given-names: Cyrille Ahmed
+    family-names: Midingoyi
+    affiliation: CIRAD
+    email: cyrille_ahmed.midingoyi@cirad.fr
+  - given-names: Gatien
+    family-names: Falconnier
+    affiliation: CIRAD
+  - given-names: Louise
+    family-names: LEROUX
+    affiliation: CIRAD
+  - given-names: Patrice 
+    family-names: KOUAKOU
+    affiliation: CIRAD
+  - given-names: Vimbayi 
+    family-names: CHIMONYO
+    affiliation: CIRAD
+  - given-names: Erik 
+    family-names: CHAVEZ
+    affiliation: CIRAD
+  - given-names: Myriam 
+    family-names: ADAM
+    affiliation: CIRAD
+  - given-names: Sandrine 
+    family-names: AUZOUX
+    affiliation: CIRAD
+  - given-names: Romain 
+    family-names: LOISON
+    affiliation: CIRAD
+
+repository-code: >-
+  https://gitlab.cirad.fr/lima/schemadedonneesmodels
+url: 'https://schemadedonneesmodels.readthedocs.io/en/latest/'
+abstract: >-
+  The package includes two databases: ‘MasterInputOutput’ which contains the input and output variables 
+  of the models, and ‘ModelDictionary’, which contains the connections and required transformations
+   between variables of the different models.. 
+keywords:
+  - crop models
+  - simulation
+  - data management
+license: MIT
