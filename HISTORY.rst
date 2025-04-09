@@ -3,7 +3,7 @@
 History
 =======
 
-SpatialWeatherAPI creation (2023-03-25)
----------------------------------------
+ModFileGen creation (2023-03-25)
+--------------------------------
 
 * First release on Conda.
