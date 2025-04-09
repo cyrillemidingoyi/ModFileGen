@@ -78,7 +78,7 @@ class DssatSoilConverter(Converter):
                                         SoilLayers.bd AS 'SoilLayers.bd', SoilLayers.OrganicC AS 'SoilLayers.OrganicC', 
                                         SoilLayers.Clay AS 'SoilLayers.Clay', SoilLayers.Silt AS 'SoilLayers.Silt', 
                                         SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH', 
-                                        SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN' FROM SOIL LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = "%s" ;"""%(idSoil.lower())
+                                        SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN' FROM SOIL LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = '%s' ;"""%(idSoil.lower())
             DA1 = pd.read_sql_query(fetchAllQuery1, master_input_connection)
             rows1 = DA1.to_dict(orient='records')
             if rows1[0]["SoilOption"] == "simple":
