@@ -28,7 +28,7 @@ prepare_release_and_deploy2zenodo:
       DEPLOY2ZENODO_JSON="mymetadata.json"
       echo "DEPLOY2ZENODO_JSON=$DEPLOY2ZENODO_JSON" >> variables.env
 
-      DEPLOY2ZENODO_UPLOAD="SharedSchemaModelsData.zip"
+      DEPLOY2ZENODO_UPLOAD="modfilegensim.zip"
       git archive --format zip --output "$DEPLOY2ZENODO_UPLOAD" HEAD
       echo "DEPLOY2ZENODO_UPLOAD=$DEPLOY2ZENODO_UPLOAD" >> variables.env
 
@@ -37,7 +37,7 @@ prepare_release_and_deploy2zenodo:
       dotenv: variables.env
     paths:
       - $DEPLOY2ZENODO_JSON
-      - SharedSchemaModelsData.zip
+      - modfilegensim.zip
 
 release_job:
   stage: deploy
@@ -69,4 +69,4 @@ deploy2zenodo:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
     DEPLOY2ZENODO_API_URL: "https://zenodo.org/api"
-    DEPLOY2ZENODO_DEPOSITION_ID: "15181825"
+    DEPLOY2ZENODO_DEPOSITION_ID: "New record"
