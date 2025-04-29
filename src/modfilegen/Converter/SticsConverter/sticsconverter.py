@@ -934,6 +934,9 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
             subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
             # get the file "mod_rapport.sti" in the usmdir directory
             mod_r = os.path.join(directoryPath, f"mod_rapport_{str(row['idsim'])}.sti") 
+            if not os.path.exists(mod_r):
+                print(f"Error: {mod_r} does not exist")
+                continue
             df = create_df_summary(mod_r)
             dataframes.append(df)
             if dt==1: os.remove(mod_r)
@@ -942,6 +945,9 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
             sys.exit(1)
+    if not dataframes:
+        print("No dataframes to concatenate.")
+        return []
     return pd.concat(dataframes, ignore_index=True)
             
 def export(MasterInput, ModelDictionary):
