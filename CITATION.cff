@@ -1,0 +1,30 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  ModFileGenSim : A tool for generating model input files and running Model Ensembles based on a shared database...
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Cyrille Ahmed
+    family-names: Midingoyi
+    affiliation: CIRAD
+    email: cyrille_ahmed.midingoyi@cirad.fr
+  - given-names: Michel
+    family-names: Giner
+    email: michel.giner@cirad.fr
+    affiliation: CIRAD
+
+repository-code: >-
+  https://gitlab.cirad.fr/lima/modfilegensim/
+url: 'https://modfilegen.readthedocs.io/en/latest/?badge=latest'
+abstract: >-
+   A tool for generating model input files and running Model Ensembles based on a shared database..... 
+keywords:
+  - crop models
+  - simulation
+  - data management
+license: MIT
