@@ -25,12 +25,16 @@ def get_coord(d):
     return {'lon': lon, 'lat': lat, 'year': year}
 
 def remove_comma(f):
-    with open(f, "r") as fil:
-        cod =fil.readlines()
-    if cod[-1].endswith(";\n"):
-        cod[-1] = cod[-1].replace(";\n", "\n")
-    with open(f, "w") as fil:
-        fil.writelines(cod)
+    try:
+        with open(f, "r") as fil:
+            cod =fil.readlines()
+        if cod[-1].endswith(";\n"):
+            cod[-1] = cod[-1].replace(";\n", "\n")
+        with open(f, "w") as fil:
+            fil.writelines(cod)
+    except Exception as e:
+        print(f"Error removing comma in file {f}: {e}")
+        raise
     
 def create_df_summary(f):
     #d_name = os.path.dirname(f).split(os.path.sep)[-1]
@@ -843,8 +847,11 @@ def format_stics_data(row, champ, precision=5, field_it=0):
     return file_content
 
 def write_file(directory, filename, content):
-    with open(os.path.join(directory, filename), "w") as f:
-        f.write(content)
+    try:
+        with open(os.path.join(directory, filename), "w") as f:
+            f.write(content)
+    except Exception as e:
+        print(f"Error writing file {filename} in {directory}: {e}")
         
 def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt):
     dataframes = []
@@ -931,11 +938,30 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
 
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
-            subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
+            try:
+                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                print(f"⏰ STICS run timed out for {usmdir}. Killing...")
+                # Forcefully terminate the process if it hangs
+                result.kill()  # Python 3.9+
+                continue
+
+            except subprocess.CalledProcessError as e:
+                print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
+                print("STDOUT:\n", e.stdout)
+                print("STDERR:\n", e.stderr)
+                continue  # skip to next simulation
+            except Exception as e:
+                print(f"⚠️ Unexpected error for {usmdir}: {str(e)}")
+                continue
+            finally:
+                # Cleanup: Close any open files or resources here
+                pass  # Add cleanup logic if needed
+
             # get the file "mod_rapport.sti" in the usmdir directory
             mod_r = os.path.join(directoryPath, f"mod_rapport_{str(row['idsim'])}.sti") 
             if not os.path.exists(mod_r):
-                print(f"Error: {mod_r} does not exist")
+                print(f"Warning: {mod_r} does not exist")
                 continue
             df = create_df_summary(mod_r)
             dataframes.append(df)
@@ -948,6 +974,10 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
     if not dataframes:
         print("No dataframes to concatenate.")
         return []
+
+    # close connections
+    ModelDictionary_Connection.close()
+    MasterInput_Connection.close()
     return pd.concat(dataframes, ignore_index=True)
             
 def export(MasterInput, ModelDictionary):
