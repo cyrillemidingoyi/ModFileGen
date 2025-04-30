@@ -99,9 +99,7 @@ def process_chunk(chunk
         create_index_query_idDclim = "CREATE INDEX IF NOT EXISTS idx_idDclim ON Dweather (IdDClim, annee);"
         cursor_cel = new_conn_cel.cursor()
         cursor_cel.execute(create_index_query_idDclim)
-
         new_conn_cel.commit()
-        
         print( "transfert of climate data from MI to Cel done")    
 
     except Exception as e:
@@ -114,15 +112,20 @@ def process_chunk(chunk
     # copier les autres tables CropManagement, soil et SoilLayers
     print("copy CropManagement, Soil and SoilLayers", flush=True)
     try:
-        tables_to_copy = ["CropManagement", "soil", "SoilLayers", "Coordinates", "InitialConditions"]
+        tables_to_copy = ["CropManagement", "Soil", "SoilLayers", "Coordinates", "InitialConditions"]
         for table in tables_to_copy:
             # remove the content of the table in the new database
             cursor_dst.execute(f"DELETE FROM {table}")
             rows = cursor.execute(f"SELECT * FROM {table}").fetchall()
             columns = [desc[0] for desc in cursor.description]
-            print(f"Copying {table} with {len(rows)} rows, columns {columns}", flush=True)
             col_names = ", ".join(columns)
             placeholders = ",".join("?" * len(columns))
+
+            cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
+            create_table_sql = cursor.fetchone()[0]
+            cursor_dst.execute(f"DROP TABLE IF EXISTS {table}")
+            cursor_dst.execute(create_table_sql)  # Recrée la structure exacte de la table
+                        
             query2 = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
             cursor_dst.executemany(query2, [tuple(row) for row in rows])
     except Exception as e:
@@ -147,7 +150,6 @@ def process_chunk(chunk
                     stderr=subprocess.PIPE,
                     text=True)
         print("✅ Celsius conversion completed successfully!", flush=True)
-        print(f"Command output:\n{result.stdout}", flush=True)
     except Exception as e:
         print("❌ Error during Celsius conversion:", flush=True)
         print(f"Exception type: {type(e).__name__}", flush=True)
@@ -168,7 +170,6 @@ def process_chunk(chunk
     # Get in a dataframe the table "OutputSyn" from the new_db_cel database
     new_conn_cel = sqlite3.connect(new_db_cel)
     df = pd.read_sql_query("SELECT * FROM OutputSynt", new_conn_cel)
-    print(f"Number of rows in OutputSynt", len(df), flush=True)
     new_conn_cel.close()
     if dt == 1: shutil.rmtree(new_dir)
     return df
