@@ -13,7 +13,7 @@ from setuptools import setup, find_packages
 
 
 short_descr = "generated required files for crop models."
-readme = open('README.md').read()
+readme = open('README.rst').read()
 history = open('HISTORY.rst').read()
 url = "https://gitlab.cirad.fr/modelingplatform/modelfilegen"
 
