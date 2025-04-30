@@ -866,7 +866,7 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
     MasterInput_Connection = sqlite3.connect(mi)
         
     for i, row in enumerate(chunk):
-        print(f"Iteration {i}")
+        print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
         simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
         usmdir = os.path.join(directoryPath, str(row["idsim"]))
