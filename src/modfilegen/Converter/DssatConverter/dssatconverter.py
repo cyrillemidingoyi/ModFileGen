@@ -123,6 +123,9 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
     if not dataframes:
         print("No dataframes to concatenate.")
         return []
+    # close connections
+    ModelDictionary_Connection.close()
+    MasterInput_Connection.close()
     return pd.concat(dataframes, ignore_index=True)
             
 def export(MasterInput, ModelDictionary):
