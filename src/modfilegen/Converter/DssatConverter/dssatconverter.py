@@ -121,13 +121,11 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
                 print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", flush=True)
                 print("STDOUT:\n", e.stdout)
                 print("STDERR:\n", e.stderr)
-                continue  # skip to next simulation
+                continue 
             except Exception as e:
                 print(f"Error running dssat: {e}", flush=True)
+                traceback.print_exc()
                 continue
-            finally:
-                # Cleanup: Close any open files or resources here
-                pass  # Add cleanup logic if needed
             summary = os.path.join(directoryPath, f"Summary_{str(row['idsim'])}.OUT")
             # if summary exists, process it
             if not os.path.exists(summary):
@@ -142,7 +140,9 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
             continue
     if not dataframes:
         print("No dataframes to concatenate.")
-        return []
+        ModelDictionary_Connection.close()
+        MasterInput_Connection.close()
+        return pd.DataFrame()
     # close connections
     ModelDictionary_Connection.close()
     MasterInput_Connection.close()
@@ -162,6 +162,8 @@ def export(MasterInput, ModelDictionary):
         MasterInput_Connection.execute("PRAGMA wal_checkpoint(FULL)")
     except Exception as ex:
         print(f"Connection Error: {ex}")
+        traceback.print_exc()
+        return
 
     try:
         cursor = MasterInput_Connection.cursor()
@@ -234,10 +236,10 @@ def main():
     # Create a Pool of worker processes
     try:
         start = time()
-        #with Pool(processes=nthreads) as pool:
+        with Pool(processes=nthreads) as pool:
             # Apply the processing function to each chunk in parallel
             #processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
-        processed_data_chunks = Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks)
+            processed_data_chunks = Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks)
 
         # check if processed_data_chunks is an empty list
         if not processed_data_chunks:
@@ -248,6 +250,8 @@ def main():
         print(f"total time, {time()-start}")
     except Exception as ex:      
         print("Export not completed successfully!")
+        traceback.print_exc()
+        return  # Change sys.exit(1) to return for better flow control
 
 if __name__ == "__main__":
     main()
