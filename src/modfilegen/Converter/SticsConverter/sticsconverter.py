@@ -950,9 +950,11 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
                 print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
                 print("STDOUT:\n", e.stdout)
                 print("STDERR:\n", e.stderr)
+                result.kill()  # Python 3.9+
                 continue  # skip to next simulation
             except Exception as e:
                 print(f"⚠️ Unexpected error for {usmdir}: {str(e)}")
+                result.kill()  # Python 3.9+
                 continue
             finally:
                 # Cleanup: Close any open files or resources here
@@ -973,7 +975,9 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
             continue
     if not dataframes:
         print("No dataframes to concatenate.")
-        return []
+        ModelDictionary_Connection.close()
+        MasterInput_Connection.close()
+        return pd.DataFrame()
 
     # close connections
     ModelDictionary_Connection.close()
