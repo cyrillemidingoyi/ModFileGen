@@ -51,8 +51,11 @@ def transform(fil):
     
 
 def write_file(directory, filename, content):
-    with open(os.path.join(directory, filename), "w") as f:
-        f.write(content)
+    try:
+        with open(os.path.join(directory, filename), "w") as f:
+            f.write(content)
+    except Exception as e:
+        print(f"Error writing file {filename}: {e}")    
         
 def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
     dataframes = []
@@ -64,7 +67,7 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
     MasterInput_Connection = sqlite3.connect(mi)
         
     for i, row in enumerate(chunk):
-        print(f"Iteration {i}")
+        print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
         try:
             simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
@@ -107,7 +110,24 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
-            subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)])
+            try:
+                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired as e:
+                print(f"⏰ DSSAT run timed out for {usmdir}. Killing... {e}", flush=True)
+                # Forcefully terminate the process if it hangs
+                result.kill()  # Python 3.9+
+                continue
+            except subprocess.CalledProcessError as e:
+                print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", flush=True)
+                print("STDOUT:\n", e.stdout)
+                print("STDERR:\n", e.stderr)
+                continue  # skip to next simulation
+            except Exception as e:
+                print(f"Error running dssat: {e}", flush=True)
+                continue
+            finally:
+                # Cleanup: Close any open files or resources here
+                pass  # Add cleanup logic if needed
             summary = os.path.join(directoryPath, f"Summary_{str(row['idsim'])}.OUT")
             # if summary exists, process it
             if not os.path.exists(summary):
@@ -119,7 +139,7 @@ def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
         except Exception as ex:
             print("Error during Running Dssat  :", ex)
             traceback.print_exc()
-            sys.exit(1)
+            continue
     if not dataframes:
         print("No dataframes to concatenate.")
         return []
@@ -216,8 +236,8 @@ def main():
         start = time()
         with Pool(processes=nthreads) as pool:
             # Apply the processing function to each chunk in parallel
-            processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
-            #Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder) for chunk in chunks)
+            #processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
+            processed_data_chunks = Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks)
 
         # check if processed_data_chunks is an empty list
         if not processed_data_chunks:
