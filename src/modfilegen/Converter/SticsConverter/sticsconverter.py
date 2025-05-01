@@ -970,7 +970,7 @@ def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, 
         except Exception as ex:
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
-            sys.exit(1)
+            continue
     if not dataframes:
         print("No dataframes to concatenate.")
         return []
