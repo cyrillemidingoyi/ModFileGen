@@ -234,10 +234,10 @@ def main():
     # Create a Pool of worker processes
     try:
         start = time()
-        with Pool(processes=nthreads) as pool:
+        #with Pool(processes=nthreads) as pool:
             # Apply the processing function to each chunk in parallel
             #processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
-            processed_data_chunks = Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks)
+        processed_data_chunks = Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks)
 
         # check if processed_data_chunks is an empty list
         if not processed_data_chunks:
