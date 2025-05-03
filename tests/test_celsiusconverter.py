@@ -1,4 +1,4 @@
-from modfilegen.Converter.CelsiusConverter import celsiusconverter
+from modfilegen.Converter.CelsiusConverter import celsiusconverter2
 from modfilegen import GlobalVariables
 import sqlite3
 from pathlib import Path
@@ -14,14 +14,14 @@ ori_mi = os.path.join(data, "ori_MasterInput.db")
 GlobalVariables["dbModelsDictionary" ] = modeldictionnary_f     
 GlobalVariables["dbMasterInput" ] = masterinput_f 
 GlobalVariables["directorypath"] = data   # contains the path of list of USM
-GlobalVariables["nthreads"] = 4
+GlobalVariables["nthreads"] = 1
 GlobalVariables["dt"] = 0
 GlobalVariables["ori_MI"] = ori_mi
 GlobalVariables["dbCelsius"] = celsius_f
 
 
 def test_celsiusconverter():
-    celsiusconverter.main()
+    celsiusconverter2.main()
     return 0
 
 if __name__ == "__main__":
