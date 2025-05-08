@@ -4,9 +4,7 @@ import pandas as pd
 import shutil
 from pathlib import Path
 from time import time
-from multiprocessing import Pool
 import subprocess
-from joblib import Parallel, delayed
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
 import uuid
@@ -18,13 +16,9 @@ import concurrent.futures
 def create_idJourClim(row):
     return row['IdDClim'] + '.' + str(row['annee']) + '.' + str(row['jda'])
 
-def process_chunk(chunk
-                  , masterInput
-                  , DB_MD
-                  , DB_Celsius
-                  , directoryPath
-                  , dt
-                  , ori_mi):
+def process_chunk(args):
+    
+    chunk, masterInput, DB_MD, DB_Celsius, directoryPath, dt, ori_mi = args
     
     try:
 
@@ -32,8 +26,6 @@ def process_chunk(chunk
         if len(idsims) == 1:
             idsims = f"({idsims[0]})"
         print(f"Number of idsims", len(idsims), flush=True)
-        
-        # Create a new folder and copy the DB_Celsius database for each process
         print(f"creating new directory for process", flush=True)
         new_dir = os.path.join(directoryPath, f"proc_{str(uuid.uuid4())}")
         Path(new_dir).mkdir(parents=True, exist_ok=True) 
@@ -46,149 +38,81 @@ def process_chunk(chunk
         with sqlite3.connect(masterInput) as conn, sqlite3.connect(new_db_mi) as new_conn, sqlite3.connect(new_db_cel) as new_conn_cel:
             cursor = conn.cursor()
             cursor_dst = new_conn.cursor()
-            cursor.execute('PRAGMA journal_mode = WAL')  # Enable Write-Ahead Logging
-            cursor.execute('PRAGMA synchronous = NORMAL') 
-        
-            # Copier SimulationList filtré
-            try:
-                print("Copy SimulationList", flush=True)
-                sim_chunks = pd.read_sql(
-                    "SELECT * FROM SimUnitList", 
-                    conn,
-                    chunksize=500
-                )
-                filtered_dfs = [
-                    chunk[chunk['idsim'].isin(idsims)] 
-                    for chunk in sim_chunks
-                ]
-                sim_df = pd.concat(filtered_dfs)
-                cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='SimUnitList'")
-                create_table_sql = cursor.fetchone()[0]
-                cursor_dst.execute("DROP TABLE IF EXISTS SimUnitList")
-                cursor_dst.execute(create_table_sql)  # Recrée la structure exacte de la table
-
-                sim_df.to_sql(
-                    'SimUnitList',
-                    new_conn,
-                    if_exists='append',
-                    index=False,
-                    chunksize=500
-                )
-                print("SimulationList copied", flush=True)
-            except Exception as e:
-                print("❌ Error during SimulationList copy:", flush=True)
-                print(f"Exception type: {type(e).__name__}", flush=True)
-                print(f"Exception message: {str(e)}", flush=True) 
-                traceback.print_exc()
-                shutil.rmtree(new_dir)
-                raise
-                
-
-            # Récupérer les idPoints utilisés
-            try:
-                idPoints = pd.read_sql(
-                        f"SELECT DISTINCT idPoint FROM SimUnitList WHERE idsim IN {idsims}",
-                        conn
-                    )['idPoint'].tolist()                
-                print( "Start transfert of climate data from MI to Cel", flush=True)
-                idPoints_tuple = tuple(idPoints)
-                if len(idPoints_tuple) == 1:
-                    idPoints_tuple = f"({idPoints_tuple[0]})"
-                print(f"Number of idPoints", len(idPoints_tuple), flush=True)
-
-                query = """
+            print("Copy SimulationList", flush=True)            
+            query_sim = f"SELECT * FROM SimUnitList WHERE idsim IN {idsims}"
+            sim_df = pd.read_sql(query_sim, conn)
+            sim_df.to_sql('SimUnitList', new_conn, if_exists='replace', index=False)
+            print("SimulationList copied", flush=True)
+            
+            
+            print( "Start transfert of climate data from MI to Cel", flush=True)
+            idPoints = tuple(sim_df["idPoint"].unique())
+            if len(idPoints) == 1:
+                idPoints = f"({idPoints[0]})"               
+            print( "Start transfert of climate data from MI to Cel", flush=True)
+            print(f"Number of idPoints", len(idPoints), flush=True)
+            query = """
                     SELECT idPoint, year, DOY, Nmonth, NdayM, srad, tmax, tmin, tmoy, rain, Etppm 
                     FROM RAclimateD 
                     WHERE idPoint IN {}
-                """.format(idPoints_tuple)
+                """.format(idPoints)
 
-                df_clim_MI = pd.read_sql(query, conn)
-                df = df_clim_MI.rename(columns={"idPoint":"IdDClim", "year":"annee", "DOY":"jda", "Nmonth":"mois", "NdayM":"jour", "srad":"rg", "rain":"plu", "Etppm":"Etp"})
-                df['idjourclim'] = df.apply(create_idJourClim, axis=1)
-                #df_sorted = df.sort_values(by='idjourclim')
-                df = df[['IdDClim', 'idjourclim', 'annee',"jda","mois","jour","tmax","tmin","tmoy","rg","plu",'Etp' ]]
-                df.to_sql('Dweather', new_conn_cel, if_exists='replace', index=False)
-
-                create_index_query_idDclim = "CREATE INDEX IF NOT EXISTS idx_idDclim ON Dweather (IdDClim, annee);"
-                cursor_cel = new_conn_cel.cursor()
-                cursor_cel.execute(create_index_query_idDclim)
-                new_conn_cel.commit()
-                print( "transfert of climate data from MI to Cel done")    
-
-            except Exception as e:
-                print("❌ Error during RAclimateD copy:", flush=True)
-                print(f"Exception type: {type(e).__name__}", flush=True)
-                print(f"Exception message: {str(e)}", flush=True)
-                traceback.print_exc()
-                shutil.rmtree(new_dir)
-                raise
+            df_clim_MI = pd.read_sql(query, conn)
+            df = df_clim_MI.rename(columns={"idPoint":"IdDClim", "year":"annee", "DOY":"jda", "Nmonth":"mois", "NdayM":"jour", "srad":"rg", "rain":"plu", "Etppm":"Etp"})
+            df['idjourclim'] = df.apply(create_idJourClim, axis=1)
+            #df_sorted = df.sort_values(by='idjourclim')
+            df = df[['IdDClim', 'idjourclim', 'annee',"jda","mois","jour","tmax","tmin","tmoy","rg","plu",'Etp' ]]
+            df.to_sql('Dweather', new_conn_cel, if_exists='replace', index=False)
+            create_index_query_idDclim = "CREATE INDEX IF NOT EXISTS idx_idDclim ON Dweather (IdDClim, annee);"
+            cursor_cel = new_conn_cel.cursor()
+            cursor_cel.execute(create_index_query_idDclim)
+            new_conn_cel.commit()
+            print( "transfert of climate data from MI to Cel done")    
                 
             # copier les autres tables CropManagement, soil et SoilLayers
             print("copy CropManagement, Soil and SoilLayers", flush=True)
-            try:
-                tables_to_copy = ["CropManagement", "Soil", "SoilLayers", "Coordinates", "InitialConditions"]
-                for table in tables_to_copy:
-                    # remove the content of the table in the new database
-                    cursor_dst.execute(f"DELETE FROM {table}")
-                    rows = cursor.execute(f"SELECT * FROM {table}").fetchall()
-                    columns = [desc[0] for desc in cursor.description]
-                    col_names = ", ".join(columns)
-                    placeholders = ",".join("?" * len(columns))
-
-                    cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
-                    create_table_sql = cursor.fetchone()[0]
-                    cursor_dst.execute(f"DROP TABLE IF EXISTS {table}")
-                    cursor_dst.execute(create_table_sql)  # Recrée la structure exacte de la table
-                                
-                    query2 = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
+            tables_to_copy = ["CropManagement", "Soil", "SoilLayers", "Coordinates", "InitialConditions"]
+            for table in tables_to_copy:
+                # remove the content of the table in the new database
+                cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
+                create_table_sql = cursor.fetchone()[0]
+                cursor_dst.execute(f"DROP TABLE IF EXISTS {table}")
+                cursor_dst.execute(create_table_sql)  # Recrée la structure exacte de la table
+                cursor.execute(f"SELECT * FROM {table}")
+                columns = [desc[0] for desc in cursor.description]
+                col_names = ", ".join(columns)
+                placeholders = ",".join("?" * len(columns))               
+                query2 = f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})"
+                batch_size = 1000
+                while True:
+                    rows = cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
                     cursor_dst.executemany(query2, [tuple(row) for row in rows])
-            except Exception as e:
-                print(f"❌ Error during {table} copy:", flush=True)
-                print(f"Exception type: {type(e).__name__}", flush=True)
-                print(f"Exception message: {str(e)}", flush=True)
-                shutil.rmtree(new_dir)
-                traceback.print_exc()
-                raise
+                new_conn.commit()
 
-
-            # Commit changes 
-            new_conn.commit()
         # use subprocess to run the celsius model with the command "celsius convert -m celsius -t ${THREADS} -dbMasterInput ${new_db_mi} -dbModelsDictionary ${DB_MD} -dbCelsius ${new_db_cel}"
         try:
             print("convert celsius", flush=True)
             result = subprocess.run(["datamill", "convert", "-m", "celsius", "-dbMasterInput", new_db_mi, "-dbModelsDictionary", DB_MD, "-dbCelsius", new_db_cel],
                             check=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
                             text=True)
             print("✅ Celsius conversion completed successfully!", flush=True)
-        except subprocess.CalledProcessError as e:
-            print("❌ Error during Celsius conversion:", flush=True)
-            print(f"Exit code: {e.returncode}", flush=True)
-            print(f"STDOUT:\n{e.stdout}", flush=True)
-            print(f"STDERR:\n{e.stderr}", flush=True)
-            shutil.rmtree(new_dir)
-            traceback.print_exc()
-            raise 
-            
-        try:
+
             print("run celsius")
-            subprocess.run(["celsius", "convert", "-m", "celsius", "-dbCelsius", new_db_cel],
-                                check=True,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                text=True
-                            )
+            subprocess.run(["celsius", "convert", "-m", "celsius", "-dbCelsius", new_db_cel], check=True,
+                                text=True)
+            print("✅ Celsius run completed successfully!", flush=True)
         except subprocess.CalledProcessError as e:
-            print("❌ Error during Celsius run!", flush=True)
-            print(f"Exit code: {e.returncode}", flush=True)
+            print("❌ Error during Celsius run:", flush=True)
+            print(f"Exception type: {type(e).__name__}", flush=True)
+            print(f"Exception message: {str(e)}", flush=True)
             print(f"STDOUT:\n{e.stdout}", flush=True)
             print(f"STDERR:\n{e.stderr}", flush=True)
-                # close connection
-            shutil.rmtree(new_dir)
             traceback.print_exc()
-            raise
-                #raise RuntimeError(f"Celsius run failed:\n{e.stderr}") from e
+        except Exception as e:
+            print(f"Error running celsius: {e}", flush=True)
+            traceback.print_exc()
 
         # Get in a dataframe the table "OutputSyn" from the new_db_cel database
         new_conn_cel = sqlite3.connect(new_db_cel)
@@ -224,35 +148,16 @@ def main():
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
     ori_mi = GlobalVariables["ori_MI"]
-
-
-
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
     chunks = chunk_data(data, chunk_size=nthreads)
+    args_list = [(chunk, mi, md, celsius, directoryPath, dt, ori_mi) for chunk in chunks]
     # Create a Pool of worker processes
     try:
         start = time()
         processed_data_chunks = []
         with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            futures = [
-                executor.submit(
-                    process_chunk, chunk, mi, md, celsius, directoryPath, dt, ori_mi
-                )
-                for chunk in chunks
-            ]
-
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    result = future.result()
-                    processed_data_chunks.append(result)
-                except Exception as e:
-                    print("❌ Error in one of the processes:", flush=True)
-                    print(f"Exception type: {type(e).__name__}", flush=True)
-                    print(f"Exception message: {str(e)}", flush=True)
-                    traceback.print_exc()
-                    #executor.shutdown(wait=False, cancel_futures=True)
-                    sys.exit(1)  # Interrompt tout
+            processed_data_chunks = list(executor.map(process_chunk,args_list))
         if not processed_data_chunks:
             print("No data to process.")
             return
