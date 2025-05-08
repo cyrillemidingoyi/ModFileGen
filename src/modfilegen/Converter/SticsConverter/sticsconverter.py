@@ -3,10 +3,9 @@ from modfilegen.converter import Converter
 from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailconverter, sticsparamsolconverter
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
-import sys, subprocess, shutil
+import subprocess
 import re
 import os
-import datetime
 import sqlite3
 from sqlite3 import Connection
 from pathlib import Path
@@ -15,6 +14,7 @@ import pandas as pd
 from time import time
 import traceback
 from joblib import Parallel, delayed    
+import concurrent.futures
 
 
 def get_coord(d):
@@ -853,7 +853,8 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename} in {directory}: {e}")
         
-def process_chunk(chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt):
+def process_chunk(args):
+    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -1065,6 +1066,7 @@ def main():
     chunks = chunk_data(data, chunk_size=nthreads)
     # Create a Pool of worker processes
     import uuid
+    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks]
     # create a random name
     result_name = str(uuid.uuid4()) + "_stics"
     result_path = os.path.join(directoryPath, f"{result_name}.csv")
@@ -1073,9 +1075,12 @@ def main():
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
     try:
         start = time()
-        with Pool(processes=nthreads) as pool:
+        processed_data_chunks = []
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk,args_list))
+        """with Pool(processes=nthreads) as pool:
             # Apply the processing function to each chunk in parallel
-            processed_data_chunks = pool.starmap(process_chunk,[(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks])  
+            processed_data_chunks = pool.starmap(process_chunk,[(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks])  """
             #Parallel(n_jobs=self.nthreads)(delayed(self.process_chunk)(chunk,mi, md, tpv6) for chunk in chunks)
         print(f"total time, {time()-start}")
         
