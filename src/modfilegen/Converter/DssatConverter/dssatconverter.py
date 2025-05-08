@@ -57,7 +57,8 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename}: {e}")    
         
-def process_chunk(chunk, mi, md, directoryPath,pltfolder, dt):
+def process_chunk(args):
+    chunk, mi, md, directoryPath,pltfolder, dt = args
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -233,13 +234,13 @@ def main():
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
     chunks = chunk_data(data, chunk_size=nthreads)
+    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks]
     # Create a Pool of worker processes
     try:
-        start = time()
-        #with Pool(processes=nthreads) as pool:
-            # Apply the processing function to each chunk in parallel
-            #processed_data_chunks = pool.starmap(process_chunk,[(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks])  
-        processed_data_chunks = Parallel(n_jobs=nthreads)(delayed(process_chunk)(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks)
+        start = time()        
+        processed_data_chunks = []
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk, args_list)) 
 
         # check if processed_data_chunks is an empty list
         if not processed_data_chunks:
