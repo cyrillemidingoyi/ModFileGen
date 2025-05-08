@@ -1078,12 +1078,7 @@ def main():
         processed_data_chunks = []
         with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
             processed_data_chunks = list(executor.map(process_chunk,args_list))
-        """with Pool(processes=nthreads) as pool:
-            # Apply the processing function to each chunk in parallel
-            processed_data_chunks = pool.starmap(process_chunk,[(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks])  """
-            #Parallel(n_jobs=self.nthreads)(delayed(self.process_chunk)(chunk,mi, md, tpv6) for chunk in chunks)
         print(f"total time, {time()-start}")
-        
         processed_data = pd.concat(processed_data_chunks, ignore_index=True)
         processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
     except Exception as ex:          

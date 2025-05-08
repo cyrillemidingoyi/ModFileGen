@@ -28,6 +28,8 @@ def process_chunk(args):
         print(f"Number of idsims", len(idsims), flush=True)
         print(f"creating new directory for process", flush=True)
         new_dir = os.path.join(directoryPath, f"proc_{str(uuid.uuid4())}")
+        while os.path.exists(new_dir):
+            new_dir = os.path.join(directoryPath, f"proc_{str(uuid.uuid4())}")
         Path(new_dir).mkdir(parents=True, exist_ok=True) 
         new_db_cel = os.path.join(new_dir, "CelsiusV3nov17_dataArise.db")
         new_db_mi = os.path.join(new_dir, "MasterInput.db")
@@ -103,6 +105,15 @@ def process_chunk(args):
             subprocess.run(["celsius", "convert", "-m", "celsius", "-dbCelsius", new_db_cel], check=True,
                                 text=True)
             print("✅ Celsius run completed successfully!", flush=True)
+            # Get in a dataframe the table "OutputSyn" from the new_db_cel database
+            new_conn_cel = sqlite3.connect(new_db_cel)
+            df = pd.read_sql_query("SELECT * FROM OutputSynt", new_conn_cel)
+            new_conn_cel.close()
+            # if df is empty return empty dataframe
+            if df.empty:
+                return pd.DataFrame()
+            if dt == 1: shutil.rmtree(new_dir)
+            return df
         except subprocess.CalledProcessError as e:
             print("❌ Error during Celsius run:", flush=True)
             print(f"Exception type: {type(e).__name__}", flush=True)
@@ -113,13 +124,6 @@ def process_chunk(args):
         except Exception as e:
             print(f"Error running celsius: {e}", flush=True)
             traceback.print_exc()
-
-        # Get in a dataframe the table "OutputSyn" from the new_db_cel database
-        new_conn_cel = sqlite3.connect(new_db_cel)
-        df = pd.read_sql_query("SELECT * FROM OutputSynt", new_conn_cel)
-        new_conn_cel.close()
-        if dt == 1: shutil.rmtree(new_dir)
-        return df
     except Exception as e:
         print("❌ Error in process_chunk:", flush=True)
         print(f"Exception type: {type(e).__name__}", flush=True)

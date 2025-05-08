@@ -202,14 +202,9 @@ def fetch_data_from_sqlite(masterInput):
     rows = df.to_dict(orient='records')
     conn.close()
     return rows
+
     
-    # Split data into chunks
-    #def chunk_data(data, chunk_size):
-        #return [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
-    
-def chunk_data(data, chunk_size):    # values, num_sublists 
-    #sublist_size = max(len(data) // chunk_size, 3)
-    #return [data[i:i + sublist_size] for i in range(0, len(data), sublist_size)]
+def chunk_data(data, chunk_size):    
     k, m = divmod(len(data), chunk_size)
     sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunk_size)]
     return sublists
