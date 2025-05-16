@@ -13,8 +13,9 @@ from multiprocessing import Pool
 import pandas as pd
 from time import time
 import traceback
-from joblib import Parallel, delayed    
+from joblib import Parallel, delayed, parallel_backend  
 import concurrent.futures
+import sys
 
 
 def get_coord(d):
@@ -853,7 +854,7 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename} in {directory}: {e}")
         
-def process_chunk(args):
+def process_chunk(*args):
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
     dataframes = []
     # Apply series of functions to each row in the chunk
@@ -1076,13 +1077,20 @@ def main():
     try:
         start = time()
         processed_data_chunks = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))
-        print(f"total time, {time()-start}")
+        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
+        
+        with parallel_backend("loky", n_jobs=nthreads):
+            processed_data_chunks = Parallel()(
+                delayed(process_chunk)(*args) for args in args_list
+            )
         processed_data = pd.concat(processed_data_chunks, ignore_index=True)
         processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
-    except Exception as ex:          
-            print("Export not completed successfully!")
+        print(f"total time, {time()-start}")
+    except Exception as ex:  
+        print("Error during processing:", ex)
+        traceback.print_exc() 
+        sys.exit(1)       
     
 if __name__ == "__main__":
     main()

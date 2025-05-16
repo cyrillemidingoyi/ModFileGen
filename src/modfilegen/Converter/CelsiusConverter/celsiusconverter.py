@@ -11,12 +11,13 @@ import uuid
 import sys
 import traceback
 import concurrent.futures
+from joblib import Parallel, delayed, parallel_backend
 
 
 def create_idJourClim(row):
     return row['IdDClim'] + '.' + str(row['annee']) + '.' + str(row['jda'])
 
-def process_chunk(args):
+def process_chunk(*args):
     
     chunk, masterInput, DB_MD, DB_Celsius, directoryPath, dt, ori_mi = args
     
@@ -160,8 +161,13 @@ def main():
     try:
         start = time()
         processed_data_chunks = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))
+        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
+            
+        with parallel_backend("loky", n_jobs=nthreads):
+            processed_data_chunks = Parallel()(
+                delayed(process_chunk)(*args) for args in args_list
+            )        
         if not processed_data_chunks:
             print("No data to process.")
             return

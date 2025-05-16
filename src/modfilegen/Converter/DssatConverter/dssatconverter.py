@@ -13,7 +13,7 @@ from multiprocessing import Pool
 import pandas as pd
 from time import time
 import traceback
-from joblib import Parallel, delayed   
+from joblib import Parallel, delayed, parallel_backend   
 import re 
 
 
@@ -57,7 +57,7 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename}: {e}")    
         
-def process_chunk(args):
+def process_chunk(*args):
     chunk, mi, md, directoryPath,pltfolder, dt = args
     dataframes = []
     # Apply series of functions to each row in the chunk
@@ -234,10 +234,13 @@ def main():
     try:
         start = time()        
         processed_data_chunks = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk, args_list)) 
+        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk, args_list)) """
 
-        # check if processed_data_chunks is an empty list
+        with parallel_backend("loky", n_jobs=nthreads):
+            processed_data_chunks = Parallel()(
+                delayed(process_chunk)(*args) for args in args_list
+            )
         if not processed_data_chunks:
             print("No data to process.")
             return
