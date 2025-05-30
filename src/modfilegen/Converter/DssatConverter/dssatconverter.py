@@ -258,7 +258,7 @@ def process_chunk(*args):
             simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idsoil"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
             usmdir = os.path.join(directoryPath, str(row["idsim"])) 
             soilid =  row["idsoil"] + "." + row["idMangt"]
-            soilstart = time.perf_counter()
+            #soilstart = time.perf_counter()
             if soilid not in soiltable:
                 soilconverter = dssatsoilconverter.DssatSoilConverter()
                 r = soilconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)

@@ -884,7 +884,7 @@ def process_chunk(*args):
             write_file(usmdir, "tempoparv6.sti", tpv6)
 
             # Tempopar
-            xstart = time.perf_counter()
+            #xstart = time.perf_counter()
             tempoparid =  row["idOption"]
             if tempoparid not in tempopar:            
                 tempoparConverter = sticstempoparconverter.SticsTempoparConverter()
@@ -892,11 +892,11 @@ def process_chunk(*args):
                 tempopar[tempoparid] = r
             else:
                 write_file(usmdir, "tempopar.sti", tempopar[tempoparid])
-            print(f"tempopar export completed for {i} in {(time.perf_counter() - xstart)*1000:.2f} mseconds")
+            #print(f"tempopar export completed for {i} in {(time.perf_counter() - xstart)*1000:.2f} mseconds")
 
             # Soil Station
             soilid =  row["idsoil"]
-            startsoil = time.perf_counter()
+            #startsoil = time.perf_counter()
             if soilid not in soiltable:
                 paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
                 r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)           
@@ -910,8 +910,8 @@ def process_chunk(*args):
                 write_file(usmdir, "prof.mod",  prof)
                 write_file(usmdir, "rap.mod",  rap)
                 write_file(usmdir, "var.mod",  var)
-            print(f"tempopar export completed for {i} in {(time.perf_counter() - startsoil)*1000:.2f} mseconds")
-            
+            #print(f"tempopar export completed for {i} in {(time.perf_counter() - startsoil)*1000:.2f} mseconds")
+
             # NewTravail
             newtravailconverter = sticsnewtravailconverter.SticsNewTravailConverter()
             newtravailconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
@@ -927,7 +927,7 @@ def process_chunk(*args):
             
             # Climat
             climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
-            climstart = time.perf_counter()
+            #climstart = time.perf_counter()
             if climid not in weathertable:
                 climatconverter = sticsclimatconverter.SticsClimatConverter()
                 #r = climatconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, DT  )
@@ -935,8 +935,8 @@ def process_chunk(*args):
                 weathertable[climid] = r
             else:
                 write_file(usmdir, "climat.txt", weathertable[climid])
-            print(f"Climat export completed for {i} in {(time.perf_counter()  - climstart)*1000:.2f} mseconds")
-            
+            #print(f"Climat export completed for {i} in {(time.perf_counter()  - climstart)*1000:.2f} mseconds")
+
             # Fictec1
             tecid =  ".".join([str(row["idMangt"]), str(row["idsoil"])]) 
             if tecid not in tectable:  
@@ -947,17 +947,17 @@ def process_chunk(*args):
                 write_file(usmdir, "fictec1.txt", tectable[tecid])
             
             # Ficplt1 
-            stfic = time.perf_counter()  
+            #stfic = time.perf_counter()  
             ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
             ficplt1converter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
-            print(f" Processed {i} in {(time.perf_counter()  - stfic)*1000:.2f} mseconds", flush=True)
+            #print(f" Processed {i} in {(time.perf_counter()  - stfic)*1000:.2f} mseconds", flush=True)
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             try:
-                custart = time.perf_counter()
+                #custart = time.perf_counter()
                 result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=60)
-                print(f"Script stdout: {result.stdout}")
-                print(f"STICS run completed for {usmdir} in {(time.perf_counter() - custart)*1000:.2f} mseconds")
+                #print(f"Script stdout: {result.stdout}")
+                #print(f"STICS run completed for {usmdir} in {(time.perf_counter() - custart)*1000:.2f} mseconds")
             except subprocess.CalledProcessError as e:
                 print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
                 print("STDOUT:\n", e.stdout)

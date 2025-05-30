@@ -12,11 +12,11 @@ cd "$USM_DIR"
 
 sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' "$USM_DIR"/tempopar.sti
 
-start=$(date +%s%3N)
+#start=$(date +%s%3N)
 /opt/stics/bin/stics_modulo #> /dev/null
-end=$(date +%s%3N)
-duration_ms=$((end - start))
-echo "Execution time: ${duration_ms}ms"
+#end=$(date +%s%3N)
+#duration_ms=$((end - start))
+#echo "Execution time: ${duration_ms}ms"
 
 base=$(basename "$USM_DIR")
 if [ -f "mod_rapport.sti" ]; then
