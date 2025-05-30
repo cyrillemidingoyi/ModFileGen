@@ -11,7 +11,7 @@ from sqlite3 import Connection
 from pathlib import Path
 from multiprocessing import Pool
 import pandas as pd
-from time import time
+import time
 import traceback
 from joblib import Parallel, delayed, parallel_backend  
 import concurrent.futures
@@ -856,6 +856,9 @@ def write_file(directory, filename, content):
         
 def process_chunk(*args):
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
+    idpoints = tuple([row["idPoint"] for row in chunk])
+    if len(idpoints) == 1:
+        idpoints = f"({idpoints[0]})"
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -866,7 +869,9 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
-        
+    T = "Select   Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'stics') And ([Table]= 'st_climat'));"
+    DT = pd.read_sql_query(T, ModelDictionary_Connection)
+    climate_df = pd.read_sql_query(f"Select * From RaClimateD where idPoint in {idpoints}", MasterInput_Connection)
     for i, row in enumerate(chunk):
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
@@ -879,6 +884,7 @@ def process_chunk(*args):
             write_file(usmdir, "tempoparv6.sti", tpv6)
 
             # Tempopar
+            xstart = time.perf_counter()
             tempoparid =  row["idOption"]
             if tempoparid not in tempopar:            
                 tempoparConverter = sticstempoparconverter.SticsTempoparConverter()
@@ -886,9 +892,11 @@ def process_chunk(*args):
                 tempopar[tempoparid] = r
             else:
                 write_file(usmdir, "tempopar.sti", tempopar[tempoparid])
+            print(f"tempopar export completed for {i} in {(time.perf_counter() - xstart)*1000:.2f} mseconds")
 
             # Soil Station
             soilid =  row["idsoil"]
+            startsoil = time.perf_counter()
             if soilid not in soiltable:
                 paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
                 r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)           
@@ -902,6 +910,7 @@ def process_chunk(*args):
                 write_file(usmdir, "prof.mod",  prof)
                 write_file(usmdir, "rap.mod",  rap)
                 write_file(usmdir, "var.mod",  var)
+            print(f"tempopar export completed for {i} in {(time.perf_counter() - startsoil)*1000:.2f} mseconds")
             
             # NewTravail
             newtravailconverter = sticsnewtravailconverter.SticsNewTravailConverter()
@@ -918,12 +927,15 @@ def process_chunk(*args):
             
             # Climat
             climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
+            climstart = time.perf_counter()
             if climid not in weathertable:
                 climatconverter = sticsclimatconverter.SticsClimatConverter()
-                r = climatconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+                #r = climatconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, DT  )
+                r = climatconverter.export(simPath, usmdir, DT, climate_df)
                 weathertable[climid] = r
             else:
                 write_file(usmdir, "climat.txt", weathertable[climid])
+            print(f"Climat export completed for {i} in {(time.perf_counter()  - climstart)*1000:.2f} mseconds")
             
             # Fictec1
             tecid =  ".".join([str(row["idMangt"]), str(row["idsoil"])]) 
@@ -934,20 +946,18 @@ def process_chunk(*args):
             else:
                 write_file(usmdir, "fictec1.txt", tectable[tecid])
             
-            # Ficplt1   
+            # Ficplt1 
+            stfic = time.perf_counter()  
             ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
             ficplt1converter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
-
+            print(f" Processed {i} in {(time.perf_counter()  - stfic)*1000:.2f} mseconds", flush=True)
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             try:
+                custart = time.perf_counter()
                 result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=60)
-            except subprocess.TimeoutExpired:
-                print(f"⏰ STICS run timed out for {usmdir}. Killing...")
-                # Forcefully terminate the process if it hangs
-                result.kill()  # Python 3.9+
-                raise
-
+                print(f"Script stdout: {result.stdout}")
+                print(f"STICS run completed for {usmdir} in {(time.perf_counter() - custart)*1000:.2f} mseconds")
             except subprocess.CalledProcessError as e:
                 print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
                 print("STDOUT:\n", e.stdout)
@@ -1075,7 +1085,7 @@ def main():
         result_name = str(uuid.uuid4()) + "_stics"
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
     try:
-        start = time()
+        start = time.time()
         processed_data_chunks = []
         """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
             processed_data_chunks = list(executor.map(process_chunk,args_list))"""
@@ -1086,7 +1096,7 @@ def main():
             )
         processed_data = pd.concat(processed_data_chunks, ignore_index=True)
         processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
-        print(f"total time, {time()-start}")
+        print(f"total time, {time.time()-start}")
     except Exception as ex:  
         print("Error during processing:", ex)
         traceback.print_exc() 

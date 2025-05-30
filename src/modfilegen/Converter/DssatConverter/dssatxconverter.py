@@ -148,7 +148,9 @@ v_fmt_tillage = {"T" : "{:2.0f}", "TDATE" : "{:>6s}", "TIMPL" : "{:>6s}", "TDEP"
 
 
 
-def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, treatid, cache_treat):
+    if treatid in cache_treat:
+        return cache_treat[treatid]
     fileContent = ""
     
     fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.NumTillOperations, OrganicFertilizationPolicy.NumOrganicFerti, CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
@@ -231,10 +233,13 @@ def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, mast
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_treat["SM"].format(float(Dv))
     fileContent += "\n"
+    cache_treat[treatid] = fileContent
     return fileContent
 
 
-def writeBlockCultivar(dssat_tableName, idMangt, modelDictionary_Connection, master_input_connection):
+def writeBlockCultivar(dssat_tableName, idMangt, modelDictionary_Connection, master_input_connection, treatid, cache_tcult):
+    if treatid in cache_tcult:
+        return cache_tcult[treatid]
     fileContent = ""
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -251,11 +256,14 @@ def writeBlockCultivar(dssat_tableName, idMangt, modelDictionary_Connection, mas
     fileContent += v_fmt_cultivars["INGENO"].format(dataTable["IdcultivarDssat"].values[0])
     fileContent += " "
     fileContent += v_fmt_cultivars["CNAME"].format(dataTable["CodCultivar"].values[0]) + "\n"
+    cache_tcult[treatid] = fileContent
     return fileContent
     
 
 
-def writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Connection):
+def writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Connection, treatid, cache_tfield):
+    if treatid in cache_tfield:
+        return cache_tfield[treatid]    
     fileContent = ""
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource], [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -330,6 +338,7 @@ def writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Con
     rw = DT[DT["Champ"] == "FHDUR"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_fields["FHDUR"].format(float(Dv)) + "\n"
+    cache_tfield[treatid] = fileContent
     return fileContent
     
     
@@ -414,7 +423,7 @@ def writeBlockSoilAnalysisData(dssat_tableName, Connection):
     return fileContent
 
 
-def writeBlockInitialCondition(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockInitialCondition(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection): 
     fileContent = ""
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -514,7 +523,9 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
     
 
 
-def writeBlockPlantingDetail(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockPlantingDetail(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, practice_id, cache_practice_pl):
+    if practice_id in cache_practice_pl:
+        return cache_practice_pl[practice_id]
     fileContent = ""
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -574,6 +585,7 @@ def writeBlockPlantingDetail(dssat_tableName, idSim, modelDictionary_Connection,
     rw = DT[DT["Champ"] == "PLNAME"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_plant["PLNAME"].format(Dv) + "\n"
+    cache_practice_pl[practice_id] = fileContent
     return fileContent
 
 
@@ -638,7 +650,9 @@ def writeBlockIrrigationWaterData(dssat_tableName, modelDictionary_Connection):
     return fileContent
      
 
-def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, practice_id, cache_practice_ferti):
+    if practice_id in cache_practice_ferti:
+        return cache_practice_ferti[practice_id]
     fileContent = ""
     dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -693,6 +707,7 @@ def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, mas
         rw = DT[DT["Champ"] == "FERNAM"]
         Dv = rw["dv"].values[0]
         fileContent += v_fmt_fertilizers["FERNAME"].format(Dv) + "\n"
+    cache_practice_ferti[practice_id] = fileContent
     return fileContent
 
 
@@ -928,7 +943,9 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
 
 
 
-def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection, optionid, cache_option):
+    if optionid in cache_option:
+        return cache_option[optionid]       
     fileContent = ""
     storeKeyDataN = 0
     storeNumMaxSimu = 1
@@ -974,6 +991,7 @@ def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connectio
             dssat_tableName1 = "dssat_x_automatic_harvest"
             fileContent += writeBlockAutomaticHarvest(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection, master_input_connection)
             fileContent += "\n"
+    cache_option[optionid] = fileContent
     return fileContent
 
 def writeBlockGeneral(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, master_input_connection):
@@ -1394,12 +1412,12 @@ class DssatXConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop):
+    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, treatg, treatid, cache_treat, cache_tcult, cache_tfield, soilanalysis, optionid, cache_option, practice_id, cache_practice_pl, cache_practice_ferti):
         ST = directory_path.split(os.sep)
         idSim = ST[-2]
         idMangt = ST[-1]
-        T = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],[Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] like 'dssat_x_%'));"
-        DT = pd.read_sql_query(T, modelDictionary_Connection)
+        """T = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],[Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] like 'dssat_x_%'));"
+        DT = pd.read_sql_query(T, modelDictionary_Connection)"""
         
         fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.NumTillOperations, OrganicFertilizationPolicy.NumOrganicFerti, 
         CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
@@ -1415,7 +1433,8 @@ class DssatXConverter(Converter):
         #Dv = rw["dv"].values[0]
         header = f"*EXP.DETAILS: {idSim} "
         fileContent = header + "\n\n"
-        fileContent += "*GENERAL\n"
+        fileContent += treatg
+        '''fileContent += "*GENERAL\n"
         fileContent += "@PEOPLE\n"
         rw = DT[DT["Champ"] == "PEOPLE"]
         Dv = rw["dv"].values[0]
@@ -1463,27 +1482,27 @@ class DssatXConverter(Converter):
         fileContent += "@NOTES\n"
         rw = DT[DT["Champ"] == "NOTES"]
         Dv = rw["dv"].values[0]
-        fileContent += Dv + "\n\n"
+        fileContent += Dv + "\n\n'''
         
         # TREATMENTS
         dssat_tableName = "dssat_x_treatment"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, treatid, cache_treat)
         
         # CULTIVARS
         dssat_tableName = "dssat_x_cultivar"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockCultivar(dssat_tableName, idMangt, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockCultivar(dssat_tableName, idMangt, modelDictionary_Connection, master_input_connection, treatid, cache_tcult)
         
         # FIELDS
         dssat_tableName = "dssat_x_field"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Connection)
+        fileContent += writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Connection, treatid, cache_tfield)
         
         # SOIL ANALYSIS
         dssat_tableName = "dssat_x_soil_analysis"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockSoilAnalysis(dssat_tableName, dssat_tableId, modelDictionary_Connection)   
+        fileContent += soilanalysis #writeBlockSoilAnalysis(dssat_tableName, dssat_tableId, modelDictionary_Connection)   
   
         # Initial conditions
         dssat_tableName = "dssat_x_initial_condition"
@@ -1493,7 +1512,7 @@ class DssatXConverter(Converter):
         # Planting details
         dssat_tableName = "dssat_x_planting_detail"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockPlantingDetail(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockPlantingDetail(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, practice_id, cache_practice_pl)
         
         # Irrigation and water management
         dssat_tableName = "dssat_x_irrigation_water"
@@ -1506,7 +1525,7 @@ class DssatXConverter(Converter):
         dssat_tableName = "dssat_x_fertilizer"
         if int(rows[0]["InoFertiPolicyCode"]) == 0:
             fileContent += "\n"
-        else: fileContent += writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection)
+        else: fileContent += writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, practice_id, cache_practice_ferti)
         
         # Residues and organic fertilizer
         dssat_tableName = "dssat_x_residues"
@@ -1536,7 +1555,7 @@ class DssatXConverter(Converter):
         # SIMULATION CONTROLS
         fileContent += "\n"
         fileContent += "*SIMULATION CONTROLS\n"
-        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection, optionid, cache_option)
         
         try:
             # Export file to specified directory
