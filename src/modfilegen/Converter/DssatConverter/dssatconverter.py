@@ -122,11 +122,11 @@ def process_chunk(*args):
                 print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", flush=True)
                 print("STDOUT:\n", e.stdout)
                 print("STDERR:\n", e.stderr)
-                continue 
+                raise e 
             except Exception as e:
                 print(f"Error running dssat: {e}", flush=True)
                 traceback.print_exc()
-                continue
+                raise e
             summary = os.path.join(directoryPath, f"Summary_{str(row['idsim'])}.OUT")
             # if summary exists, process it
             if not os.path.exists(summary):

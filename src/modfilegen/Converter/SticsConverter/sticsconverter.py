@@ -952,12 +952,12 @@ def process_chunk(*args):
                 print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
                 print("STDOUT:\n", e.stdout)
                 print("STDERR:\n", e.stderr)
-                result.kill()  # Python 3.9+
-                raise  # skip to next simulation
+                #result.kill()  # Python 3.9+
+                raise e  # skip to next simulation
             except Exception as e:
                 print(f"⚠️ Unexpected error for {usmdir}: {str(e)}")
-                result.kill()  # Python 3.9+
-                raise
+                #result.kill()  # Python 3.9+
+                raise e
             finally:
                 # Cleanup: Close any open files or resources here
                 pass  # Add cleanup logic if needed
