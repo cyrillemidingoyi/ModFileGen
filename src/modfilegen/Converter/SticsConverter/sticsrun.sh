@@ -10,14 +10,14 @@ cd "$USM_DIR"
 
 sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' "$USM_DIR"/tempopar.sti
 
-/opt/stics/bin/stics_modulo #> /dev/null
+/opt/stics/bin/stics_modulo > /dev/null
 
 base=$(basename "$USM_DIR")
 if [ -f "mod_rapport.sti" ]; then
     mv mod_rapport.sti "$input_dir/mod_rapport_$base.sti"
 fi
 if [ $dt -eq 1 ]; then
-    rm -rf "$USM_DIR"
+    (rm -rf "$USM_DIR" &)
 fi
 cd "$OLD_PWD"
 

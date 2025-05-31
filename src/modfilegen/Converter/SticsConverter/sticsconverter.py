@@ -941,12 +941,12 @@ def process_chunk(*args):
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=60)
+                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=180)
             except subprocess.TimeoutExpired:
                 print(f"⏰ STICS run timed out for {usmdir}. Killing...")
                 # Forcefully terminate the process if it hangs
-                result.kill()  # Python 3.9+
-                raise
+                #result.kill()  # Python 3.9+
+                raise e
 
             except subprocess.CalledProcessError as e:
                 print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
@@ -1086,7 +1086,7 @@ def main():
             )
         processed_data = pd.concat(processed_data_chunks, ignore_index=True)
         processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
-        print(f"total time, {time()-start}")
+        print(f"STICS total time, {time()-start}")
     except Exception as ex:  
         print("Error during processing:", ex)
         traceback.print_exc() 

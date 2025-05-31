@@ -177,7 +177,7 @@ def main():
             conn.execute("DELETE FROM OutputSynt")
             df.to_sql("OutputSynt", conn, if_exists='append', index=False)
             conn.commit()
-        print(f"total time, {time()-start}")
+        print(f"Celsius total time, {time()-start}")
     except Exception as ex:
         print("❌ Error during parallel processing:", flush=True)
         print(f"Exception type: {type(ex).__name__}", flush=True)

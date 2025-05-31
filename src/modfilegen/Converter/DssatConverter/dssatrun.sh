@@ -19,7 +19,7 @@ fi
 
 # if dt=1, then delete the USM_DIR
 if [ $dt -eq 1 ]; then
-    rm -rf "$USM_DIR"
+    (rm -rf "$USM_DIR" &)
 fi
 
 cd "$OLD_PWD" 
