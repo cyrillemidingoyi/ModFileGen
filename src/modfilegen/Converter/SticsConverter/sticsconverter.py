@@ -942,7 +942,7 @@ def process_chunk(*args):
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             try:
                 result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=180)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 print(f"⏰ STICS run timed out for {usmdir}. Killing...")
                 # Forcefully terminate the process if it hangs
                 #result.kill()  # Python 3.9+
