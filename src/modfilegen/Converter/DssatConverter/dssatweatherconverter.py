@@ -85,7 +85,7 @@ class DssatweatherConverter(Converter):
                     fileContent += v_fmt_general["WNDHT"].format(float(wndht)) + "\n"
                                             
                     Year = str(Year)
-                    fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' and year='" + Year + "';"  
+                    fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' and year='" + Year + "' ORDER BY w_date ;"  
                     DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
                     rows = DA.to_dict(orient='records')
                     fileNameArray[2] = "01" 

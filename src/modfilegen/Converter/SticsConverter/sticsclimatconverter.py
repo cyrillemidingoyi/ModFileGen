@@ -16,9 +16,37 @@ class SticsClimatConverter(Converter):
         Year = ST[-1]
         T = "Select   Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'stics') And ([Table]= 'st_climat'));"
         DT = pd.read_sql_query(T, ModelDictionary_Connection)
-        fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' And (Year=" + Year + " or Year=" + str(int(Year) + 1) + ");"
+        fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' And (Year=" + Year + " or Year=" + str(int(Year) + 1) + ") ORDER BY w_date;"
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
-        rows = DA.to_dict(orient='records')
+        
+        # Pre-cache default values
+        vapeurp_dv = float(DT[DT["Champ"] == "vapeurp"]["dv"].values[0])
+        co2_dv = float(DT[DT["Champ"] == "co2"]["dv"].values[0])
+        
+        # Process data in bulk
+        DA['srad'] = DA['srad'].fillna(-999.9)
+        DA['wind'] = DA['wind'].fillna(-999.9)
+        
+        # Format all lines at once
+        lines = (
+            DA['idPoint'] + ' ' + 
+            DA['year'].astype(str) + ' ' +
+            DA['Nmonth'].astype(str).str.rjust(3) +
+            DA['NdayM'].astype(str).str.rjust(3) +
+            DA['DOY'].astype(str).str.rjust(4) +
+            DA['tmin'].apply(lambda x: format(x, ".1f")).str.rjust(8) +
+            DA['tmax'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
+            DA['srad'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
+            DA['Etppm'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
+            DA['rain'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
+            DA['wind'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
+            str(format(vapeurp_dv, ".1f")).rjust(7) +
+            str(format(co2_dv, ".1f")).rjust(7) + '\n'
+        )
+        
+        fileContent = ''.join(lines.tolist())        
+        
+        '''rows = DA.to_dict(orient='records')
         for row in rows:
             fileContent += row["idPoint"] + " "
             year = row["year"]
@@ -54,7 +82,7 @@ class SticsClimatConverter(Converter):
             rw = DT[DT["Champ"] == "co2"]
             Dv = rw["dv"].values[0]
             fileContent += format(float(Dv), ".1f").rjust(7)
-            fileContent += "\n"
+            fileContent += "\n"  '''
         try:
             # Export file to specified directory    
             self.write_file(usmdir, file_name, fileContent)
