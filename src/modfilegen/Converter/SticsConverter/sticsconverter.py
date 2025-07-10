@@ -16,6 +16,8 @@ import traceback
 from joblib import Parallel, delayed, parallel_backend  
 import concurrent.futures
 import sys
+from joblib import Memory
+memory = Memory("./cachedir", verbose=0)
 
 
 def get_coord(d):
@@ -1080,7 +1082,7 @@ def main():
         """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
             processed_data_chunks = list(executor.map(process_chunk,args_list))"""
         
-        with parallel_backend("loky", n_jobs=nthreads):
+        with parallel_backend("threading", n_jobs=nthreads):
             processed_data_chunks = Parallel()(
                 delayed(process_chunk)(*args) for args in args_list
             )
