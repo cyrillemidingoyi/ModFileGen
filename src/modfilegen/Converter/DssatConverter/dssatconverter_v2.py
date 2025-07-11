@@ -195,7 +195,7 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename}: {e}")    
         
-def process_chunk(*args):
+def process_chunk(args):
     chunk, mi, md, directoryPath,pltfolder, dt = args
     idpoints = tuple([row["idPoint"] for row in chunk])
     if len(idpoints) == 1:
@@ -235,18 +235,22 @@ def process_chunk(*args):
             treatid =  row["idMangt"] 
             # cultivar 
             #culttart = time.perf_counter()
+            #cultivarconverter = dssatcultivarconverter.DssatCultivarConverter()
+            #crop = cultivarconverter.export(simPath, MasterInput_Connection, pltfolder, usmdir, treatid, culticache2, culticache)
             cultivarconverter = dssatcultivarconverter.DssatCultivarConverter()
-            crop = cultivarconverter.export(simPath, MasterInput_Connection, pltfolder, usmdir, treatid, culticache2, culticache)
+            crop = cultivarconverter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
             #print(f"cultivar export completed for {i} in {(time.perf_counter() - culttart)*1000:.2f} mseconds")
             
             # weather
-            climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
+            #climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
             #climstart = time.perf_counter()
+            climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
             if climid not in weathertable:
                 weatherconverter = dssatweatherconverter.DssatweatherConverter()
-                r = weatherconverter.export(simPath, usmdir, DT, climate_df, coord_df)
+                r = weatherconverter.export(simPath,  ModelDictionary_Connection,MasterInput_Connection, usmdir)
                 weathertable[climid] = r
             else:
+
                 r = weathertable[climid]
                 keys = list(r.keys())
                 values = list(r.values())
@@ -273,22 +277,20 @@ def process_chunk(*args):
             #tecid =  row["idsoil"] + "." + row["idMangt"]  + row["idOption"]
             #if tecid not in tectable:
             
-            optionid = f'{row["idOption"]} + "." + {row["StartYear"]}+ "." + {row["StartDay"]}+ "." + {row["EndYear"]}+ "." + {row["EndDay"]}'
-            practice_id = f'{row["idMangt"]} + "." + {row["StartYear"]}+ "." + {row["StartDay"]}+ "." + {row["EndYear"]}+ "." + {row["EndDay"]}' 
             simPath = os.path.join(directoryPath, str(row["idsim"]),str(row["idMangt"]))
             usmdir = os.path.join(directoryPath, str(row["idsim"])) 
             xconverter = dssatxconverter.DssatXConverter()
-            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop, treatg, treatid, cache_treat, cache_tcult, cache_tfield, soilanalysis, optionid, cache_option, practice_id, cache_practice_pl, cache_practice_ferti)     
+            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop)    
             ##print(f"xstart export completed for {i} in {(time.perf_counter() - xstart)*1000:.2f} mseconds")
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
-                #from time import time
-                #exect = time()
-                result = subprocess.run([bs, usmdir, directoryPath, str(dt)],executable=bs, capture_output=True, check=True, text=True, timeout=60)
-                #print(f"Script stdout: {result.stdout}")
-                #print(f"duration of dssat execution is  {time() - exect:.2f} seconds")
+                from time import time
+                exect = time()
+                result = subprocess.run([bs, usmdir, directoryPath, str(dt)],executable=bs)
+                print(f"Script stdout: {result.stdout}")
+                print(f"duration of dssat execution is  {time() - exect:.2f} seconds")
             except subprocess.CalledProcessError as e:
                 print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", flush=True)
                 print("STDOUT:\n", e.stdout)
@@ -405,13 +407,13 @@ def main():
     try:
         start = time.time()        
         processed_data_chunks = []
-        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk, args_list)) """
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk, args_list))
 
-        with parallel_backend("loky", n_jobs=nthreads):
+        """with parallel_backend("loky", n_jobs=nthreads):
             processed_data_chunks = Parallel()(
                 delayed(process_chunk)(*args) for args in args_list
-            )
+            )"""
         if not processed_data_chunks:
             print("No data to process.")
             return
