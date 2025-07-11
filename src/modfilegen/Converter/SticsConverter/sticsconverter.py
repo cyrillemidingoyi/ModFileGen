@@ -16,8 +16,6 @@ import traceback
 from joblib import Parallel, delayed, parallel_backend  
 import concurrent.futures
 import sys
-from joblib import Memory
-memory = Memory("./cachedir", verbose=0)
 
 
 def get_coord(d):
