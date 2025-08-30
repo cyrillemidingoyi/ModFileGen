@@ -59,13 +59,15 @@ def process_chunk(*args):
                     FROM RAclimateD 
                     WHERE idPoint IN {}
                 """.format(idPoints)
-
-            df_clim_MI = pd.read_sql(query, conn)
-            df = df_clim_MI.rename(columns={"idPoint":"IdDClim", "year":"annee", "DOY":"jda", "Nmonth":"mois", "NdayM":"jour", "srad":"rg", "rain":"plu", "Etppm":"Etp"})
-            df['idjourclim'] = df.apply(create_idJourClim, axis=1)
-            #df_sorted = df.sort_values(by='idjourclim')
-            df = df[['IdDClim', 'idjourclim', 'annee',"jda","mois","jour","tmax","tmin","tmoy","rg","plu",'Etp' ]]
-            df.to_sql('Dweather', new_conn_cel, if_exists='replace', index=False)
+            first = True
+            for dfc in pd.read_sql(query, conn, chunksize=100_000):  
+                #df_clim_MI = pd.read_sql(query, conn)
+                dfc = dfc.rename(columns={"idPoint":"IdDClim", "year":"annee", "DOY":"jda", "Nmonth":"mois", "NdayM":"jour", "srad":"rg", "rain":"plu", "Etppm":"Etp"})
+                dfc['idjourclim'] = dfc.apply(create_idJourClim, axis=1)
+                #df_sorted = df.sort_values(by='idjourclim')
+                dfc = dfc[['IdDClim', 'idjourclim', 'annee',"jda","mois","jour","tmax","tmin","tmoy","rg","plu",'Etp' ]]
+                dfc.to_sql('Dweather', new_conn_cel, if_exists='replace' if first else 'append', index=False)
+                first = False
             create_index_query_idDclim = "CREATE INDEX IF NOT EXISTS idx_idDclim ON Dweather (IdDClim, annee);"
             cursor_cel = new_conn_cel.cursor()
             cursor_cel.execute(create_index_query_idDclim)
