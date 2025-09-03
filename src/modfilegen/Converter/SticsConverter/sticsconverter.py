@@ -1079,14 +1079,14 @@ def main():
         start = time()
         processed_data_chunks = []
         """with ThreadPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
             processed_data_chunks = list(executor.map(process_chunk,args_list))
+            with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
         
-        """with parallel_backend("threading", n_jobs=nthreads):
+        with parallel_backend("threading", n_jobs=nthreads):
             processed_data_chunks = Parallel()(
                 delayed(process_chunk)(*args) for args in args_list
-            )"""
+            )
         processed_data = pd.concat(processed_data_chunks, ignore_index=True)
         processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
         print(f"STICS total time, {time()-start}")
