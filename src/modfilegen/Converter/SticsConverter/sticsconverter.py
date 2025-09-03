@@ -855,7 +855,7 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename} in {directory}: {e}")
         
-def process_chunk(args):
+def process_chunk(*args):
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
     dataframes = []
     # Apply series of functions to each row in the chunk
