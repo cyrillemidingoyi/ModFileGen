@@ -1078,10 +1078,10 @@ def main():
     try:
         start = time()
         processed_data_chunks = []
-        with ThreadPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))
-        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+        """with ThreadPoolExecutor(max_workers=nthreads) as executor:
             processed_data_chunks = list(executor.map(process_chunk,args_list))"""
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk,args_list))
         
         """with parallel_backend("threading", n_jobs=nthreads):
             processed_data_chunks = Parallel()(
