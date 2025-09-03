@@ -15,6 +15,7 @@ from time import time
 import traceback
 from joblib import Parallel, delayed, parallel_backend  
 import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 import sys
 
 
@@ -854,7 +855,7 @@ def write_file(directory, filename, content):
     except Exception as e:
         print(f"Error writing file {filename} in {directory}: {e}")
         
-def process_chunk(*args):
+def process_chunk(args):
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
     dataframes = []
     # Apply series of functions to each row in the chunk
@@ -1045,8 +1046,8 @@ def fetch_data_from_sqlite(masterInput):
 def chunk_data(data, chunk_size):    # values, num_sublists 
     #sublist_size = max(len(data) // chunk_size, 3)
     #return [data[i:i + sublist_size] for i in range(0, len(data), sublist_size)]
-    k, m = divmod(len(data), chunk_size)
-    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunk_size)]
+    k, m = divmod(len(data), 10*chunk_size)
+    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(10*chunk_size)]
     return sublists
 
 def main():
@@ -1077,13 +1078,15 @@ def main():
     try:
         start = time()
         processed_data_chunks = []
+        with ThreadPoolExecutor(max_workers=nthreads) as executor:
+            processed_data_chunks = list(executor.map(process_chunk,args_list))
         """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
             processed_data_chunks = list(executor.map(process_chunk,args_list))"""
         
-        with parallel_backend("threading", n_jobs=nthreads):
+        """with parallel_backend("threading", n_jobs=nthreads):
             processed_data_chunks = Parallel()(
                 delayed(process_chunk)(*args) for args in args_list
-            )
+            )"""
         processed_data = pd.concat(processed_data_chunks, ignore_index=True)
         processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
         print(f"STICS total time, {time()-start}")
