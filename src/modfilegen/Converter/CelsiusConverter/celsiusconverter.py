@@ -143,8 +143,8 @@ def fetch_data_from_sqlite(masterInput):
     
     
 def chunk_data(data, chunk_size):    # values, num_sublists 
-    k, m = divmod(len(data), chunk_size)
-    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunk_size)]
+    k, m = divmod(len(data), 3*chunk_size)
+    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(3*chunk_size)]
     return sublists
 
 def main():
