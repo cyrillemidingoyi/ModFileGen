@@ -638,7 +638,7 @@ def writeBlockIrrigationWaterData(dssat_tableName, modelDictionary_Connection):
     return fileContent
      
 
-def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, Dv_ferti):
     fileContent = ""
     dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -662,10 +662,13 @@ def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, mas
             Bissext = 1
         else:
             Bissext = 0
-        if ifert > 365 + Bissext:
+        if ifert > 365 + Bissext and Dv_ferti != "D":
             fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i] + 1)[2:4] + str(ifert - 365 - Bissext).rjust(3, "0"))
-        else:
+        elif ifert <= 365 + Bissext and Dv_ferti != "D":
             fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i])[2:4] + str(ifert).rjust(3, "0"))
+        elif Dv_ferti == "D":
+            fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["Dferti"].values[i]))
+        
         rw = DT[DT["Champ"] == "IFTYPE"]
         Dv = rw["dv"].values[0] 
         fileContent += v_fmt_fertilizers["FMCD"].format(Dv)
@@ -1407,6 +1410,18 @@ class DssatXConverter(Converter):
         On CropManagement.idMangt = SimUnitList.idMangt) ON SoilTillPolicy.SoilTillPolicyCode = CropManagement.SoilTillPolicyCode) 
         ON OrganicFertilizationPolicy.OFertiPolicyCode = CropManagement.OFertiPolicyCode Where IdSim='%s'""" % (idSim)
         dataTable = pd.read_sql_query(fetchAllQuery, master_input_connection)
+
+        rw = DT[DT["Champ"] == "IPLTI"]
+        Dv_planting = rw["dv"].values[0]
+        rw = DT[DT["Champ"] == "IIRRI"]
+        Dv_irri = rw["dv"].values[0]
+        rw = DT[DT["Champ"] == "IFERI"]
+        Dv_ferti = rw["dv"].values[0]
+        rw = DT[DT["Champ"] == "IHARI"]
+        Dv_hari = rw["dv"].values[0]
+        rw = DT[DT["Champ"] == "IRESI"]
+        Dv_resi = rw["dv"].values[0]
+        
         rows = dataTable.to_dict('records')
         #rw = DT[DT["Champ"] == "filename"]
         #Dv = rw["dv"].values[0]
@@ -1506,7 +1521,7 @@ class DssatXConverter(Converter):
         dssat_tableName = "dssat_x_fertilizer"
         if int(rows[0]["InoFertiPolicyCode"]) == 0:
             fileContent += "\n"
-        else: fileContent += writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection)
+        else: fileContent += writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, Dv_ferti)
         
         # Residues and organic fertilizer
         dssat_tableName = "dssat_x_residues"
