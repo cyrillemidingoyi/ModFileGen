@@ -920,7 +920,7 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
     else:
         Bissext = 0
     if iharv > 365 + Bissext and Dv_hari != "D":
-        fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["EndYear"].values[0] + 1)[2:4] + str(iharv - 365 - Bissext).rjust(3, "0"))
+        fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["StartYear"].values[0] + 1)[2:4] + str(iharv - 365 - Bissext).rjust(3, "0"))
     elif iharv <= 365 + Bissext and Dv_hari != "D":
         fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["StartYear"].values[0])[2:4] + str(iharv).rjust(3, "0"))
     elif Dv_hari == "D":
