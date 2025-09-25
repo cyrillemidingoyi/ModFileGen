@@ -901,16 +901,35 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
     fileContent += "\n"
     fileContent += "*HARVEST DETAILS\n"
     fileContent += siteColumnsHeader + "\n"
-    fetchAllQuery  = "SELECT SimUnitList.idsim, SimUnitList.EndYear,SimUnitList.EndDay FROM SimUnitList  Where Idsim ='%s';"%(idSim)
+    
+    fetchAllQuery  = """SELECT SimUnitList.idsim,  SimUnitList.StartYear, SimUnitList.EndYear,SimUnitList.EndDay, CropManagement.Sowingdate, 
+                CropManagement.DHarvest FROM CropManagement JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt WHERE SimUnitList.idsim ='%s';"""%(idSim)
+
+    #fetchAllQuery  = "SELECT SimUnitList.idsim, SimUnitList.EndYear,SimUnitList.EndDay FROM SimUnitList  Where Idsim ='%s';"%(idSim)
     dataTable = pd.read_sql_query(fetchAllQuery, master_input_connection)
     rw = DT[DT["Champ"] == "LNHAR"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_harvest["H"].format(float(Dv))
     rw = DT[DT["Champ"] == "IHARI"]
     Dv = rw["dv"].values[0]
-    if Dv_hari == "D":
-        fileContent += v_fmt_harvest["HDATE"].format(format(int(Dv)))
-    else: fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["EndYear"].values[0])[2:4] + str(dataTable["EndDay"].values[0]).rjust(3, "0"))
+    
+    iharv = int(dataTable["sowingdate"].values[0] + dataTable["DHarvest"].values[0])
+    if dataTable["DHarvest"].values[0] == 0: iharv+= 1
+    if dataTable["StartYear"].values[0] % 4 == 0:
+        Bissext = 1
+    else:
+        Bissext = 0
+    if iharv > 365 + Bissext and Dv_hari != "D":
+        fileContent += v_fmt_fertilizers["HDATE"].format(str(dataTable["EndYear"].values[0] + 1)[2:4] + str(iharv - 365 - Bissext).rjust(3, "0"))
+    elif iharv <= 365 + Bissext and Dv_hari != "D":
+        fileContent += v_fmt_fertilizers["HDATE"].format(str(dataTable["StartYear"].values[0])[2:4] + str(iharv).rjust(3, "0"))
+    elif Dv_hari == "D":
+        fileContent += v_fmt_fertilizers["HDATE"].format(str(int(dataTable["DHarvest"].values[0])))
+
+
+    '''if Dv_hari == "D":
+        fileContent += v_fmt_harvest["HDATE"].format(format(int( str(dataTable["EndDay"].values[0]))))
+    else: fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["EndYear"].values[0])[2:4] + str(dataTable["EndDay"].values[0]).rjust(3, "0"))'''
     rw = DT[DT["Champ"] == "HTSG"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_harvest["HSTG"].format(Dv.strip())
