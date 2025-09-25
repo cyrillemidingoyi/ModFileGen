@@ -667,7 +667,7 @@ def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, mas
         elif ifert <= 365 + Bissext and Dv_ferti != "D":
             fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i])[2:4] + str(ifert).rjust(3, "0"))
         elif Dv_ferti == "D":
-            fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["Dferti"].values[i]))
+            fileContent += v_fmt_fertilizers["FDATE"].format(str(int(dataTable["Dferti"].values[i])))
         
         rw = DT[DT["Champ"] == "IFTYPE"]
         Dv = rw["dv"].values[0] 
