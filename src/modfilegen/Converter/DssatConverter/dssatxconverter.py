@@ -893,7 +893,7 @@ def writeBlockEnvironment(dssat_tableName, dssat_tableId, modelDictionary_Connec
     return fileContent
 
 
-def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Connection, master_input_connection):
+def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Connection, master_input_connection, Dv_hari):
     fileContent = ""
     dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s' or [Table] = 'dssat_x_simulation_management'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -908,7 +908,9 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
     fileContent += v_fmt_harvest["H"].format(float(Dv))
     rw = DT[DT["Champ"] == "IHARI"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["EndYear"].values[0])[2:4] + str(dataTable["EndDay"].values[0]).rjust(3, "0"))
+    if Dv_hari == "D":
+        fileContent += v_fmt_harvest["HDATE"].format(format(int(Dv)))
+    else: fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["EndYear"].values[0])[2:4] + str(dataTable["EndDay"].values[0]).rjust(3, "0"))
     rw = DT[DT["Champ"] == "HTSG"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_harvest["HSTG"].format(Dv.strip())
@@ -1546,7 +1548,7 @@ class DssatXConverter(Converter):
         # HARVEST DETAILS
         dssat_tableName = "dssat_x_harvest"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Connection, master_input_connection, Dv_hari)
         
         # SIMULATION CONTROLS
         fileContent += "\n"
