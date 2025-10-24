@@ -112,7 +112,13 @@ def process_chunk(*args):
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=300)
+                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],
+                                        #capture_output=True,
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=None, 
+                                        check=True, 
+                                        text=True, 
+                                        timeout=300)
             except subprocess.TimeoutExpired as e:
                 print(f"⏰ DSSAT run timed out for {usmdir}. Killing... {e}", file=sys.stderr, flush=True)
                 # Forcefully terminate the process if it hangs
@@ -121,7 +127,7 @@ def process_chunk(*args):
             except subprocess.CalledProcessError as e:
                 print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", file=sys.stderr, flush=True)
                 #print("STDOUT:\n", e.stdout, file=sys.stdout, flush=True)
-                if e.stderr: print("STDERR:\n", e.stderr, file=sys.stderr, flush=True)
+                #if e.stderr: print("STDERR:\n", e.stderr, file=sys.stderr, flush=True)
                 raise 
             except Exception as e:
                 print(f"Error running dssat: {e}", file=sys.stderr, flush=True)
@@ -136,7 +142,7 @@ def process_chunk(*args):
             dataframes.append(df)
             if dt==1: os.remove(summary)            
         except Exception as ex:
-            print("Error during Running Dssat  :", ex)
+            print("Error during Running Dssat  :", ex, file=sys.stderr, flush=True)
             traceback.print_exc()
             continue
     if not dataframes:
