@@ -85,12 +85,16 @@ def process_chunk(*args):
                 r = weatherconverter.export(simPath,  ModelDictionary_Connection,MasterInput_Connection, usmdir)
                 weathertable[climid] = r
             else:
-
+                ST = simPath.split(os.sep)
+                Mngt = ST[-1][:4]
+                Year = ST[-2]
+                
                 r = weathertable[climid]
                 keys = list(r.keys())
                 values = list(r.values())
-                write_file(usmdir, keys[0], values[0])
-                write_file(usmdir, keys[1], values[1])
+                write_file(usmdir, Mngt.upper() + Year[2:4] + "01" + ".WTH", values[0])
+                write_file(usmdir, Mngt.upper() + str(int(Year[2:4])+1) + "01" + ".WTH", values[1])
+                #write_file(usmdir, keys[1], values[1])
             
             # soil
             simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idsoil"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
