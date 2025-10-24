@@ -1360,7 +1360,7 @@ def writeBlockAutomaticResidue(dssat_tableName, dssat_tableId, idSim, modelDicti
 
 def writeBlockAutomaticHarvest(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, master_input_connection):
     fileContent = ""
-    siteColumnsHeader = "@N HARVEST    HFRST HLAST HPCNP HPCNR"
+    siteColumnsHeader = "@N HARVEST     HFRST HLAST HPCNP HPCNR"
     dssat_queryRead = "Select Champ, Default_Value_Datamill, Variables.defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
     fileContent += siteColumnsHeader + "\n"

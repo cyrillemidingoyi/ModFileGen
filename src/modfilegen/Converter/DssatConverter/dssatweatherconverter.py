@@ -107,7 +107,7 @@ class DssatweatherConverter(Converter):
                         fileContent += v_fmt['WIND'].format(row['wind']*86.4) if 'wind' in row and row['wind'] is not None else ' '*6 
                         fileContent += v_fmt['PAR'].format(row['par']) if 'par' in row and row['par'] is not None else  ' '*6
                         fileContent += v_fmt['EVAP'].format(row['evap']) if 'evap' in row and row['evap'] is not None else ' '*6
-                        fileContent += v_fmt['RHUM'].format(float(row['rhum'])) if 'rhum' in row and  row['rhum'] is not None else ' '*6 +"\n"
+                        fileContent += v_fmt['RHUM'].format(float(row['rhum'])) +"\n" if 'rhum' in row and  row['rhum'] is not None else ' '*6 +"\n"
                         
                 file_name = fileNameArray[0] + fileNameArray[1] + fileNameArray[2] + fileNameArray[3]
                 self.write_file(usmdir, file_name, fileContent)
