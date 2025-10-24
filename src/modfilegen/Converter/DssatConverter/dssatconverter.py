@@ -112,21 +112,21 @@ def process_chunk(*args):
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=180)
+                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=300)
             except subprocess.TimeoutExpired as e:
-                print(f"⏰ DSSAT run timed out for {usmdir}. Killing... {e}", flush=True)
+                print(f"⏰ DSSAT run timed out for {usmdir}. Killing... {e}", file=sys.stderr, flush=True)
                 # Forcefully terminate the process if it hangs
                 #result.kill()  # Python 3.9+
-                raise e
+                raise 
             except subprocess.CalledProcessError as e:
-                print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", flush=True)
-                print("STDOUT:\n", e.stdout)
-                print("STDERR:\n", e.stderr)
-                raise e 
+                print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", file=sys.stderr, flush=True)
+                #print("STDOUT:\n", e.stdout, file=sys.stdout, flush=True)
+                if e.stderr: print("STDERR:\n", e.stderr, file=sys.stderr, flush=True)
+                raise 
             except Exception as e:
-                print(f"Error running dssat: {e}", flush=True)
+                print(f"Error running dssat: {e}", file=sys.stderr, flush=True)
                 traceback.print_exc()
-                raise e
+                raise
             summary = os.path.join(directoryPath, f"Summary_{str(row['idsim'])}.OUT")
             # if summary exists, process it
             if not os.path.exists(summary):
