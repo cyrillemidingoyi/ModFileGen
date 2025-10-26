@@ -10,7 +10,7 @@ dt=$(echo $3 | awk '{print int($1)}')
 
 cd "$USM_DIR"
 
-dssat B DSSBatch.v47  > /dev/null
+dssat B DSSBatch.v47  #> /dev/null
 
 base=$(basename "$USM_DIR")
 if [ -f "Summary.OUT" ]; then
