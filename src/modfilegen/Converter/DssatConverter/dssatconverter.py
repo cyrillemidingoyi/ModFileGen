@@ -93,7 +93,7 @@ def process_chunk(*args):
                 keys = list(r.keys())
                 values = list(r.values())
                 write_file(usmdir, Mngt.upper() + Year[2:4] + "01" + ".WTH", values[0])
-                write_file(usmdir, Mngt.upper() + str(int(Year[2:4])+1) + "01" + ".WTH", values[1])
+                write_file(usmdir, Mngt.upper() + str(int(Year)+1)[2:4] + "01" + ".WTH", values[1])
                 #write_file(usmdir, keys[1], values[1])
             
             # soil
@@ -119,7 +119,7 @@ def process_chunk(*args):
                 result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],
                                         #capture_output=True,
                                         stdout=subprocess.DEVNULL,
-                                        stderr=None, 
+                                        stderr=sys.stderr, 
                                         check=True, 
                                         text=True, 
                                         timeout=300)
