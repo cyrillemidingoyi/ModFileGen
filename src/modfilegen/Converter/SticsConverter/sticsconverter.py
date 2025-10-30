@@ -1043,11 +1043,11 @@ def fetch_data_from_sqlite(masterInput):
     return rows
     
     
-def chunk_data(data, chunk_size):    # values, num_sublists 
+def chunk_data(data, parts, chunk_size):    # values, num_sublists 
     #sublist_size = max(len(data) // chunk_size, 3)
     #return [data[i:i + sublist_size] for i in range(0, len(data), sublist_size)]
-    k, m = divmod(len(data), chunk_size)
-    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunk_size)]
+    k, m = divmod(len(data), parts * chunk_size)
+    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(parts * chunk_size)]
     return sublists
 
 def main():
@@ -1057,6 +1057,8 @@ def main():
     pltfolder = GlobalVariables["pltfolder"]
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
+    parts = GlobalVariables["parts"]
+    
     export(mi, md)
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
@@ -1065,7 +1067,7 @@ def main():
     prof = common_prof()
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
-    chunks = chunk_data(data, chunk_size=nthreads)
+    chunks = chunk_data(data, parts, chunk_size=nthreads)
     # Create a Pool of worker processes
     import uuid
     args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks]
