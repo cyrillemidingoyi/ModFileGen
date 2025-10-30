@@ -9,4 +9,5 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "dbModelsDictionary" : "",
                     "dbCelsius" : "",
                     "dt" : 1,
-                    "ori_MI" : "",}
+                    "ori_MI" : "",
+                    "parts": 1}
