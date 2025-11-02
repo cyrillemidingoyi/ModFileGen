@@ -856,7 +856,7 @@ def write_file(directory, filename, content):
         print(f"Error writing file {filename} in {directory}: {e}")
         
 def process_chunk(*args):
-    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
+    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir = args
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -872,7 +872,7 @@ def process_chunk(*args):
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
         simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
-        usmdir = os.path.join(directoryPath, str(row["idsim"]))
+        usmdir = os.path.join(tempDir, str(row["idsim"]))
             
         try:
             # Tempoparv6
@@ -1058,6 +1058,7 @@ def main():
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
     parts = GlobalVariables["parts"]
+    tempDir = GlobalVariables["tempDir"]
     
     export(mi, md)
     tppar = common_tempopar(md)
@@ -1070,7 +1071,7 @@ def main():
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     # Create a Pool of worker processes
     import uuid
-    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks]
+    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt, tempDir) for chunk in chunks]
     # create a random name
     result_name = str(uuid.uuid4()) + "_stics"
     result_path = os.path.join(directoryPath, f"{result_name}.csv")
