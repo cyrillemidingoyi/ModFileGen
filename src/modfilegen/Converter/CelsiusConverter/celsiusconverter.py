@@ -57,11 +57,11 @@ def process_chunk(*args):
             print( "Start transfert of climate data from MI to Cel", flush=True)
             print(f"Number of idPoints", len(idPoints), flush=True)
             placeholders = ",".join("?" * len(idPoints))
-            query = """
+            query = f"""
                     SELECT idPoint, year, DOY, Nmonth, NdayM, srad, tmax, tmin, tmoy, rain, Etppm 
                     FROM RAclimateD 
                     WHERE idPoint IN ({placeholders})
-                """.format(idPoints)
+                """
             first = True
             for dfc in pd.read_sql(query, conn, params=idPoints, chunksize=100_000):  
                 #df_clim_MI = pd.read_sql(query, conn)
