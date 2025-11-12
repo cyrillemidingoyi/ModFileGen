@@ -50,17 +50,20 @@ def process_chunk(*args):
             
             print( "Start transfert of climate data from MI to Cel", flush=True)
             idPoints = tuple(sim_df["idPoint"].unique())
-            if len(idPoints) == 1:
-                idPoints = f"({idPoints[0]})"               
+            '''if len(idPoints) == 1:
+                idPoints = f"({idPoints[0]})"   '''
+            if len(idPoints) == 0:
+                raise ValueError("No idPoints found in sim_df['idPoint'].")            
             print( "Start transfert of climate data from MI to Cel", flush=True)
             print(f"Number of idPoints", len(idPoints), flush=True)
+            placeholders = ",".join("?" * len(idPoints))
             query = """
                     SELECT idPoint, year, DOY, Nmonth, NdayM, srad, tmax, tmin, tmoy, rain, Etppm 
                     FROM RAclimateD 
-                    WHERE idPoint IN {}
+                    WHERE idPoint IN ({placeholders})
                 """.format(idPoints)
             first = True
-            for dfc in pd.read_sql(query, conn, chunksize=100_000):  
+            for dfc in pd.read_sql(query, conn, params=idPoints, chunksize=100_000):  
                 #df_clim_MI = pd.read_sql(query, conn)
                 dfc = dfc.rename(columns={"idPoint":"IdDClim", "year":"annee", "DOY":"jda", "Nmonth":"mois", "NdayM":"jour", "srad":"rg", "rain":"plu", "Etppm":"Etp"})
                 dfc['idjourclim'] = dfc.apply(create_idJourClim, axis=1)
