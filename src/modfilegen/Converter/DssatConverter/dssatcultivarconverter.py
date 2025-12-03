@@ -11,14 +11,14 @@ class DssatCultivarConverter(Converter):
 
     def export(self, directory_path, master_input_connection, pltfolder, usmdir):
         ST = directory_path.split(os.sep)   
-        sq = """SELECT CropManagement.idMangt as idMangt, ListCultOption.PRCROP as crop 
+        sq = """SELECT CropManagement.idMangt as idMangt, ListCultOption.PRCROP as crop, ListCultOption.DSCROP as dscrop 
         FROM (ListCultOption INNER JOIN (ListCultivars INNER JOIN CropManagement ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON ListCultOption.CodePSpecies = ListCultivars.CodePSpecies) where idMangt= '%s' ;"""%(ST[-1])   
         df_sim = pd.read_sql(sq, master_input_connection)
         rows = df_sim.to_dict('records')
         
-        src_path_cul = os.path.join(pltfolder, rows[0]["crop"]+"CER047.CUL")
-        src_path_eco = os.path.join(pltfolder, rows[0]["crop"]+"CER047.ECO")
-        src_path_spe = os.path.join(pltfolder, rows[0]["crop"]+"CER047.SPE")
+        src_path_cul = os.path.join(pltfolder, rows[0]["crop"]+ rows[0]["dscrop"] + ".CUL")
+        src_path_eco = os.path.join(pltfolder, rows[0]["crop"]+ rows[0]["dscrop"] + ".ECO")
+        src_path_spe = os.path.join(pltfolder, rows[0]["crop"]+ rows[0]["dscrop"] + ".SPE")
         
         if not os.path.exists(usmdir):
             os.makedirs(usmdir)
