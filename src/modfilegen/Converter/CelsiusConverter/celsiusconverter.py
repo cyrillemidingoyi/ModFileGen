@@ -145,9 +145,9 @@ def fetch_data_from_sqlite(masterInput):
     return rows
     
     
-def chunk_data(data, chunk_size):    # values, num_sublists 
-    k, m = divmod(len(data), 3*chunk_size)
-    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(3*chunk_size)]
+def chunk_data(data, split,chunk_size):    # values, num_sublists 
+    k, m = divmod(len(data), split*chunk_size)
+    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(split*chunk_size)]
     return sublists
 
 def main():
@@ -158,9 +158,10 @@ def main():
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
     ori_mi = GlobalVariables["ori_MI"]
+    split = GlobalVariables["parts"]
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
-    chunks = chunk_data(data, chunk_size=nthreads)
+    chunks = chunk_data(data, split,chunk_size=nthreads)
     args_list = [(chunk, mi, md, celsius, directoryPath, dt, ori_mi) for chunk in chunks]
     # Create a Pool of worker processes
     try:
