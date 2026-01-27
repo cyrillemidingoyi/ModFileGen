@@ -1067,9 +1067,15 @@ def main():
         var = common_var()
         prof = common_prof()
     else:
-        rap = os.path.join(stics_params, "rap.mod")
-        var = os.path.join(stics_params, "var.mod")
-        prof = os.path.join(stics_params, "prof.mod")
+        rapfile = os.path.join(stics_params, "rap.mod")
+        with open(rapfile, "r") as f:
+            rap = f.read()
+        varfile = os.path.join(stics_params, "var.mod")
+        with open(varfile, "r") as f:
+            var = f.read()
+        proffile = os.path.join(stics_params, "prof.mod")
+        with open(proffile, "r") as f:
+            prof = f.read()
     export(mi, md)
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
