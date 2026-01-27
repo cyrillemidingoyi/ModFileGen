@@ -952,7 +952,7 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
 
 
 
-def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection, dt):
     fileContent = ""
     storeKeyDataN = 0
     storeNumMaxSimu = 1
@@ -981,7 +981,7 @@ def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connectio
         dssat_tableName1 = "dssat_x_simulation_management"
         fileContent += writeBlockManagement(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
         dssat_tableName1 = "dssat_x_simulation_outputs"
-        fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
+        fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection, dt)
         fileContent += "\n"
         #z = 0
         if Dv_planting=="A" or Dv_irri=="A" or Dv_ferti=="A" or Dv_hari=="A" or Dv_resi=="A":
@@ -1168,8 +1168,9 @@ def writeBlockManagement(dssat_tableName, dssat_tableId, idSim, modelDictionary_
     
 
 
-def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection):
+def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, dt):
     fileContent = ""
+    daily = "N" if dt ==1 else "Y"
     siteColumnsHeader = "@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT"
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -1194,28 +1195,28 @@ def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Con
     fileContent += v_fmt_simulation["FROPT"].format(int(Dv))
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["GROUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["GROUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETC"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["CAOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["CAOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["WAOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["WAOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETN"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["NIOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["NIOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETP"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["MIOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["MIOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETD"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["DIOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["DIOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_simulation["VBOSE"].format("N")#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETC"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["CHOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["CHOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_simulation["OPOUT"].format(Dv.strip()) + "\n"
@@ -1418,7 +1419,7 @@ class DssatXConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop):
+    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dt):
         ST = directory_path.split(os.sep)
         idSim = ST[-2]
         idMangt = ST[-1]
@@ -1572,7 +1573,7 @@ class DssatXConverter(Converter):
         # SIMULATION CONTROLS
         fileContent += "\n"
         fileContent += "*SIMULATION CONTROLS\n"
-        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection, dt)
         
         try:
             # Export file to specified directory

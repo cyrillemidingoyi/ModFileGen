@@ -80,7 +80,7 @@ def common_rap():
     
 def common_prof():
     fileContent = ""
-    fileContent += "2"
+    fileContent += "2\n"
     fileContent += "tsol(iz)\n"
     fileContent += "10\n"
     fileContent += "01 01 2000\n"
@@ -1059,13 +1059,21 @@ def main():
     dt = GlobalVariables["dt"]
     parts = GlobalVariables["parts"]
     tempDir = GlobalVariables["tempDir"]
+    package = GlobalVariables["package"]
     
+    stics_params = os.path.join(package, "data", "stics_params")
+    if not os.path.exists(stics_params):
+        rap = common_rap()
+        var = common_var()
+        prof = common_prof()
+    else:
+        rap = os.path.join(stics_params, "rap.mod")
+        var = os.path.join(stics_params, "var.mod")
+        prof = os.path.join(stics_params, "prof.mod")
     export(mi, md)
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
-    rap = common_rap()
-    var = common_var()
-    prof = common_prof()
+
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)

@@ -111,7 +111,7 @@ def process_chunk(*args):
             simPath = os.path.join(directoryPath, str(row["idsim"]),str(row["idMangt"]))
             usmdir = os.path.join(directoryPath, str(row["idsim"])) 
             xconverter = dssatxconverter.DssatXConverter()
-            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop)
+            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop, dt)
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
