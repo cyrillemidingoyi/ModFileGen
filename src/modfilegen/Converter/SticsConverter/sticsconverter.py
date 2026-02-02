@@ -985,7 +985,22 @@ def process_chunk(*args):
     # close connections
     ModelDictionary_Connection.close()
     MasterInput_Connection.close()
-    return pd.concat(dataframes, ignore_index=True)
+    
+    # Concatenate in batches to reduce memory usage
+    batch_size = 1000
+    if len(dataframes) <= batch_size:
+        return pd.concat(dataframes, ignore_index=True)
+    
+    result = pd.DataFrame()
+    for i in range(0, len(dataframes), batch_size):
+        batch = dataframes[i:i+batch_size]
+        batch_concat = pd.concat(batch, ignore_index=True)
+        result = pd.concat([result, batch_concat], ignore_index=True)
+        # Clear the batch to free memory
+        del batch
+        del batch_concat
+    
+    return result
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -1094,18 +1109,24 @@ def main():
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
     try:
         start = time()
-        processed_data_chunks = []
-        """with ThreadPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))
-            with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
+        df = pd.DataFrame()        
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            futures = {executor.submit(process_chunk, *args): i for i, args in enumerate(args_list)}
+            
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    chunk_df = future.result()
+                    if not chunk_df.empty:
+                        df = pd.concat([df, chunk_df], ignore_index=True)
+                        print(f"✅ Processed chunk {futures[future] + 1}/{len(args_list)}, current total rows: {len(df)}", flush=True)
+                except Exception as e:
+                    print(f"❌ Chunk {futures[future] + 1} failed: {e}", flush=True)
+                    traceback.print_exc()
+        if df.empty:
+            print("No data to process.")
+            return
         
-        with parallel_backend("loky", n_jobs=nthreads):
-            processed_data_chunks = Parallel()(
-                delayed(process_chunk)(*args) for args in args_list
-            )
-        processed_data = pd.concat(processed_data_chunks, ignore_index=True)
-        processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
+        df.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
         print(f"STICS total time, {time()-start}")
     except Exception as ex:  
         print("Error during processing:", ex)

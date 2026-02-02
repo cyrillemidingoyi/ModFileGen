@@ -14,6 +14,7 @@ import concurrent.futures
 from joblib import Parallel, delayed, parallel_backend
 
 
+
 def create_idJourClim(row):
     return row['IdDClim'] + '.' + str(row['annee']) + '.' + str(row['jda'])
 
@@ -166,18 +167,24 @@ def main():
     # Create a Pool of worker processes
     try:
         start = time()
-        processed_data_chunks = []
-        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
+        df = pd.DataFrame()
+        
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
+            futures = {executor.submit(process_chunk, *args): i for i, args in enumerate(args_list)}
             
-        with parallel_backend("loky", n_jobs=nthreads):
-            processed_data_chunks = Parallel()(
-                delayed(process_chunk)(*args) for args in args_list
-            )        
-        if not processed_data_chunks:
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    chunk_df = future.result()
+                    if not chunk_df.empty:
+                        df = pd.concat([df, chunk_df], ignore_index=True)
+                        print(f"✅ Processed chunk {futures[future] + 1}/{len(args_list)}, current total rows: {len(df)}", flush=True)
+                except Exception as e:
+                    print(f"❌ Chunk {futures[future] + 1} failed: {e}", flush=True)
+                    traceback.print_exc()
+        
+        if df.empty:
             print("No data to process.")
             return
-        df = pd.concat(processed_data_chunks, ignore_index=True)
         print(f"Number of rows in OutputSynt", len(df), flush=True)
         with sqlite3.connect(celsius) as conn:
             conn.execute("DELETE FROM OutputSynt")
