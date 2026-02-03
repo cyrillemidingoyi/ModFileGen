@@ -1165,7 +1165,7 @@ def main():
                 batch_args = args_list[batch_idx:batch_idx + batch_size]
                 
                 # Process this batch
-                batch_results = Parallel(verbose=10)(
+                batch_results = Parallel()(
                     delayed(process_chunk)(*args) for args in batch_args
                 )
                 
