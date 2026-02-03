@@ -864,11 +864,25 @@ def process_chunk(*args):
     tempopar = {}
     tectable = {}
     initable = {}
+    
+    # Clear caches periodically to prevent memory buildup
+    CACHE_CLEAR_INTERVAL = 50000
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
         
     for i, row in enumerate(chunk):
+        # Periodically clear caches to free memory
+        if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
+            print(f"🗑️ Clearing caches at row {i} to free memory", flush=True)
+            weathertable.clear()
+            soiltable.clear()
+            tempopar.clear()
+            tectable.clear()
+            initable.clear()
+            # Also trigger garbage collection
+            import gc
+            gc.collect()
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
         simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
@@ -885,6 +899,7 @@ def process_chunk(*args):
                 tempoparConverter = sticstempoparconverter.SticsTempoparConverter()
                 r = tempoparConverter.export(simPath, MasterInput_Connection, tppar, usmdir)
                 tempopar[tempoparid] = r
+                del tempoparConverter  # Free converter object
             else:
                 write_file(usmdir, "tempopar.sti", tempopar[tempoparid])
 
@@ -892,10 +907,12 @@ def process_chunk(*args):
             soilid =  row["idsoil"]
             if soilid not in soiltable:
                 paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
-                r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)           
+                r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+                del paramsolconverter  # Free converter
                 stationconverter = sticsstationconverter.SticsStationConverter()
                 r2 = stationconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, rap, var, prof, usmdir)         
                 soiltable[soilid] = [r1, r2]
+                del stationconverter  # Free converter
             else:
                 write_file(usmdir, "param.sol", soiltable[soilid][0])
                 write_file(usmdir, "station.txt", soiltable[soilid][1][0])
@@ -907,6 +924,7 @@ def process_chunk(*args):
             # NewTravail
             newtravailconverter = sticsnewtravailconverter.SticsNewTravailConverter()
             newtravailconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+            del newtravailconverter  # Free converter
             
             # Init  
             iniid =  ".".join([str(row["idsoil"]), str(row["idIni"])])    
@@ -914,6 +932,7 @@ def process_chunk(*args):
                 ficiniconverter = sticsficiniconverter.SticsFicIniConverter()
                 r = ficiniconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 initable[iniid] = r
+                del ficiniconverter  # Free converter
             else:
                 write_file(usmdir, "ficini.txt", initable[iniid])
             
@@ -923,6 +942,7 @@ def process_chunk(*args):
                 climatconverter = sticsclimatconverter.SticsClimatConverter()
                 r = climatconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 weathertable[climid] = r
+                del climatconverter  # Free converter
             else:
                 write_file(usmdir, "climat.txt", weathertable[climid])
             
@@ -932,12 +952,14 @@ def process_chunk(*args):
                 fictec1converter = sticsfictec1converter.SticsFictec1Converter()
                 r = fictec1converter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 tectable[tecid] = r
+                del fictec1converter  # Free converter
             else:
                 write_file(usmdir, "fictec1.txt", tectable[tecid])
             
             # Ficplt1   
             ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
             ficplt1converter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
+            del ficplt1converter  # Free converter
 
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
@@ -971,6 +993,7 @@ def process_chunk(*args):
             df = create_df_summary(mod_r)
             dataframes.append(df)
             if dt==1: os.remove(mod_r)
+            del df  # Free df after appending
             
         except Exception as ex:
             print("Error during Running STICS  :", ex)
@@ -980,16 +1003,31 @@ def process_chunk(*args):
         print("No dataframes to concatenate.")
         ModelDictionary_Connection.close()
         MasterInput_Connection.close()
+        # Clear all caches
+        weathertable.clear()
+        soiltable.clear()
+        tempopar.clear()
+        tectable.clear()
+        initable.clear()
         return pd.DataFrame()
 
     # close connections
     ModelDictionary_Connection.close()
     MasterInput_Connection.close()
     
+    # Clear all caches before concatenation
+    weathertable.clear()
+    soiltable.clear()
+    tempopar.clear()
+    tectable.clear()
+    initable.clear()
+    
     # Concatenate in batches to reduce memory usage
     batch_size = 1000
     if len(dataframes) <= batch_size:
-        return pd.concat(dataframes, ignore_index=True)
+        result = pd.concat(dataframes, ignore_index=True)
+        del dataframes  # Free the list
+        return result
     
     result = pd.DataFrame()
     for i in range(0, len(dataframes), batch_size):
@@ -1000,6 +1038,7 @@ def process_chunk(*args):
         del batch
         del batch_concat
     
+    del dataframes  # Free the list
     return result
             
 def export(MasterInput, ModelDictionary):
@@ -1098,9 +1137,12 @@ def main():
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
+    print(f"📊 Total simulations to process: {len(data)}", flush=True)
+    del data  # Free original data list after chunking
     # Create a Pool of worker processes
     import uuid
     args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt, tempDir) for chunk in chunks]
+    del chunks  # Free chunks list after creating args_list
     # create a random name
     result_name = str(uuid.uuid4()) + "_stics"
     result_path = os.path.join(directoryPath, f"{result_name}.csv")
@@ -1109,25 +1151,45 @@ def main():
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
     try:
         start = time()
-        df = pd.DataFrame()        
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            futures = {executor.submit(process_chunk, *args): i for i, args in enumerate(args_list)}
+        # Use joblib Parallel with loky backend, write results directly to final file
+        print(f"Processing {len(args_list)} chunks...", flush=True)
+        
+        write_header = True
+        total_chunks_written = 0
+        
+        with parallel_backend('loky', n_jobs=nthreads):
+            # Process in small batches to avoid holding all results in memory
+            batch_size = max(1, nthreads)  # Process nthreads chunks at a time
             
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    chunk_df = future.result()
+            for batch_idx in range(0, len(args_list), batch_size):
+                batch_args = args_list[batch_idx:batch_idx + batch_size]
+                
+                # Process this batch
+                batch_results = Parallel(verbose=10)(
+                    delayed(process_chunk)(*args) for args in batch_args
+                )
+                
+                # Write each result directly to final file
+                for i, chunk_df in enumerate(batch_results):
                     if not chunk_df.empty:
-                        df = pd.concat([df, chunk_df], ignore_index=True)
-                        print(f"✅ Processed chunk {futures[future] + 1}/{len(args_list)}, current total rows: {len(df)}", flush=True)
-                except Exception as e:
-                    print(f"❌ Chunk {futures[future] + 1} failed: {e}", flush=True)
-                    traceback.print_exc()
-        if df.empty:
+                        # Append to result file (write header only once)
+                        chunk_df.to_csv(result_path, mode='a', header=write_header, index=False)
+                        write_header = False  # Only write header for first chunk
+                        total_chunks_written += 1
+                        print(f"✅ Chunk {batch_idx + i + 1}/{len(args_list)}: {len(chunk_df)} rows written", flush=True)
+                    
+                    # Free memory immediately
+                    del chunk_df
+                
+                # Free batch results
+                del batch_results
+        
+        if total_chunks_written == 0:
             print("No data to process.")
             return
         
-        df.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
-        print(f"STICS total time, {time()-start}")
+        print(f"✅ Results saved to {result_path}")
+        print(f"STICS total time: {time()-start:.2f}s", flush=True)
     except Exception as ex:  
         print("Error during processing:", ex)
         traceback.print_exc() 

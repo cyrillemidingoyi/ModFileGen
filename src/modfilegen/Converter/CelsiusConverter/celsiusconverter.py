@@ -1,3 +1,16 @@
+"""
+Celsius Converter - Parallel processing with memory optimization
+
+MEMORY MANAGEMENT:
+- To reduce OOM errors, reduce 'nthreads' (fewer parallel workers)
+- Increase 'parts' to create smaller chunks per worker
+- Results are written directly to database (not held in memory)
+
+CONFIGURATION (in GlobalVariables):
+- nthreads: Number of parallel worker processes
+- parts: Number of chunks per thread (total chunks = nthreads * parts)
+"""
+
 import os
 import sqlite3
 import pandas as pd
@@ -118,6 +131,7 @@ def process_chunk(*args):
             new_conn_cel.close()
             # if df is empty return empty dataframe
             if df.empty:
+                if dt == 1: shutil.rmtree(new_dir)
                 return pd.DataFrame()
             if dt == 1: shutil.rmtree(new_dir)
             return df
@@ -160,37 +174,62 @@ def main():
     dt = GlobalVariables["dt"]
     ori_mi = GlobalVariables["ori_MI"]
     split = GlobalVariables["parts"]
+    
     data = fetch_data_from_sqlite(mi)
+    print(f"📊 Total simulations to process: {len(data)}", flush=True)
+    
     # Split data into chunks
-    chunks = chunk_data(data, split,chunk_size=nthreads)
+    chunks = chunk_data(data, split, chunk_size=nthreads)
+    del data  # Free original data list after chunking
+    
     args_list = [(chunk, mi, md, celsius, directoryPath, dt, ori_mi) for chunk in chunks]
-    # Create a Pool of worker processes
+    del chunks  # Free chunks list after creating args_list
+    
+    # Use joblib Parallel with loky backend, write results directly to database
     try:
         start = time()
-        df = pd.DataFrame()
+        print(f"Processing {len(args_list)} chunks...", flush=True)
         
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            futures = {executor.submit(process_chunk, *args): i for i, args in enumerate(args_list)}
-            
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    chunk_df = future.result()
-                    if not chunk_df.empty:
-                        df = pd.concat([df, chunk_df], ignore_index=True)
-                        print(f"✅ Processed chunk {futures[future] + 1}/{len(args_list)}, current total rows: {len(df)}", flush=True)
-                except Exception as e:
-                    print(f"❌ Chunk {futures[future] + 1} failed: {e}", flush=True)
-                    traceback.print_exc()
-        
-        if df.empty:
-            print("No data to process.")
-            return
-        print(f"Number of rows in OutputSynt", len(df), flush=True)
+        # Clear OutputSynt table once at the beginning
         with sqlite3.connect(celsius) as conn:
             conn.execute("DELETE FROM OutputSynt")
-            df.to_sql("OutputSynt", conn, if_exists='append', index=False)
             conn.commit()
-        print(f"Celsius total time, {time()-start}")
+        
+        total_rows = 0
+        
+        with parallel_backend('loky', n_jobs=nthreads):
+            # Process in small batches to avoid holding all results in memory
+            batch_size = max(1, nthreads)  # Process nthreads chunks at a time
+            
+            for batch_idx in range(0, len(args_list), batch_size):
+                batch_args = args_list[batch_idx:batch_idx + batch_size]
+                
+                # Process this batch
+                batch_results = Parallel(verbose=10)(
+                    delayed(process_chunk)(*args) for args in batch_args
+                )
+                
+                # Write each result directly to database
+                for i, chunk_df in enumerate(batch_results):
+                    if not chunk_df.empty:
+                        with sqlite3.connect(celsius) as conn:
+                            chunk_df.to_sql("OutputSynt", conn, if_exists='append', index=False)
+                            conn.commit()
+                        total_rows += len(chunk_df)
+                        print(f"✅ Chunk {batch_idx + i + 1}/{len(args_list)}: {len(chunk_df)} rows written to database", flush=True)
+                    
+                    # Free memory immediately
+                    del chunk_df
+                
+                # Free batch results
+                del batch_results
+        
+        if total_rows == 0:
+            print("No data to process.", flush=True)
+            return
+        
+        print(f"✅ Total rows in OutputSynt: {total_rows}", flush=True)
+        print(f"Celsius total time: {time()-start:.2f}s", flush=True)
     except Exception as ex:
         print("❌ Error during parallel processing:", flush=True)
         print(f"Exception type: {type(ex).__name__}", flush=True)
