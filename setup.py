@@ -15,7 +15,7 @@ from setuptools import setup, find_packages
 short_descr = "generated required files for crop models."
 readme = open('README.rst').read()
 history = open('HISTORY.rst').read()
-url = "https://gitlab.cirad.fr/modelingplatform/modelfilegen"
+url = "https://github.com/CropModelingPlatform/ModFileGen"
 
 description = ''
 long_description = '''
@@ -62,6 +62,9 @@ setup_kwds = dict(
     setup_requires=[
         ],
     install_requires=[
+        "numpy<2.0",
+        "pandas>=1.5",
+        "joblib>=1.0",
         ],
     tests_require=[
         "pytest",

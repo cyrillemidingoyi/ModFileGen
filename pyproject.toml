@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modfilegen"
+version = "1.0.0"
+description = "Generate and run model input files for different crop models based on a standardized shared database"
+readme = "README.rst"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Cyrille Ahmed Midingoyi", email = "cyrille_ahmed.midingoyi@cirad.fr"},
+]
+maintainers = [
+    {name = "LIMA Team - Crop Modeling Platform"},
+]
+keywords = ["crop models", "DSSAT", "STICS", "APSIM", "agricultural modeling", "simulation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy<2.0",
+    "pandas>=1.5",
+    "joblib>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "flake8",
+    "build",
+    "twine",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+
+[project.urls]
+Homepage = "https://github.com/CropModelingPlatform/ModFileGen"
+Documentation = "https://modfilegen.readthedocs.io"
+Repository = "https://github.com/CropModelingPlatform/ModFileGen"
+Issues = "https://github.com/CropModelingPlatform/ModFileGen/issues"
+
+[project.scripts]
+gen = "modfilegen.main:main"
+
+[tool.setuptools]
+packages = ["modfilegen"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "modfilegen.version.__version__"}
+
+[tool.setuptools.package-data]
+modfilegen = ["*.json", "*.xml", "*.ini", "*.sh", "*.shp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--maxfail=2 -rf --cov=modfilegen --cov-report=term-missing"

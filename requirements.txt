@@ -4,14 +4,17 @@
 # section pysetup
 
 # install
-
+numpy<2.0  # Pin to avoid breaking changes in numpy 2.0
+pandas>=1.5
+joblib>=1.0
 
 # run examples
 
 
 # test
-#pytest
-#pytest-mock
+pytest>=7.0
+pytest-cov
+pytest-mock
 
 
 # compile doc
@@ -19,10 +22,9 @@
 
 
 # other dvlpt tools
+flake8
+build
+twine
 
 
 # #}
-
-pandas >=1.5
-sqlite
-
