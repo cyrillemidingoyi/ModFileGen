@@ -20,7 +20,7 @@ import sys
 
 
 def get_coord(d):
-    res = re.findall("([-]?\d+[.]?\d+)[_]", d)
+    res = re.findall(r"([-]?\d+[.]?\d+)[_]", d)
     lat = float(res[0])
     lon = float(res[1])
     year = int(float(res[2]))
@@ -1105,15 +1105,21 @@ def chunk_data(data, parts, chunk_size):    # values, num_sublists
     return sublists
 
 def main():
-    mi= GlobalVariables["dbMasterInput"]
-    md = GlobalVariables["dbModelsDictionary"]
-    directoryPath = GlobalVariables["directorypath"]
-    pltfolder = GlobalVariables["pltfolder"]
-    nthreads = GlobalVariables["nthreads"]
-    dt = GlobalVariables["dt"]
-    parts = GlobalVariables["parts"]
-    tempDir = GlobalVariables["tempDir"]
-    package = GlobalVariables["package"]
+    mi = GlobalVariables.get("dbMasterInput")
+    md = GlobalVariables.get("dbModelsDictionary")
+    directoryPath = GlobalVariables.get("directorypath", os.getcwd())
+    pltfolder = GlobalVariables.get("pltfolder")
+    nthreads = GlobalVariables.get("nthreads", 4)
+    dt = GlobalVariables.get("dt", 1)
+    parts = GlobalVariables.get("parts", 1)
+    tempDir = GlobalVariables.get("tempDir") or os.path.join(directoryPath, "temp")
+    package = GlobalVariables.get("package") or str(Path(__file__).resolve().parents[3])
+
+    if not mi or not md:
+        raise ValueError("dbMasterInput and dbModelsDictionary must be set in GlobalVariables")
+
+    os.makedirs(directoryPath, exist_ok=True)
+    os.makedirs(tempDir, exist_ok=True)
     
     stics_params = os.path.join(package, "data", "stics_params")
     if not os.path.exists(stics_params):

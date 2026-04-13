@@ -94,7 +94,8 @@ class DssatSoilConverter(Converter):
                     fileContent += v_fmt["SDUL"].format(rows1[0]["Soil.Wfc"] / 100)
                     rw = DT[DT["Champ"] == "ssat"]
                     Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SSAT"].format(float(Dv))
+                    #fileContent += v_fmt["SSAT"].format(float(Dv))
+                    fileContent += v_fmt["SSAT"].format(row1["Soil.Wfc"] * 1.01 / 100)
                     rw = DT[DT["Champ"] == "srgf"]
                     Dv = rw["dv"].values[0]
                     fileContent += v_fmt["SRGF"].format(float(Dv))
@@ -139,7 +140,8 @@ class DssatSoilConverter(Converter):
                     fileContent += v_fmt["SDUL"].format(row1["SoilLayers.Wfc"] / 100)
                     rw = DT[DT["Champ"] == "ssat"]
                     Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SSAT"].format(float(Dv))
+                    #fileContent += v_fmt["SSAT"].format(float(Dv))
+                    fileContent += v_fmt["SSAT"].format(row1["SoilLayers.Wfc"] * 1.01 / 100)
                     rw = DT[DT["Champ"] == "srgf"]
                     Dv = rw["dv"].values[0]
                     fileContent += v_fmt["SRGF"].format(float(Dv))
