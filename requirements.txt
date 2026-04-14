@@ -4,7 +4,7 @@
 # section pysetup
 
 # install
-numpy<2.0  # Pin to avoid breaking changes in numpy 2.0
+numpy>=1.26  # Compatible with numpy 2.x
 pandas>=1.5
 joblib>=1.0
 
