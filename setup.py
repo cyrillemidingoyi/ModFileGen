@@ -8,7 +8,7 @@ from os import walk
 from os.path import abspath, normpath, splitext
 from os.path import join as pj
 
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 
 
@@ -28,7 +28,7 @@ with open("src/modfilegen/version.py") as fp:
     version = _version["__version__"]
 
 # find packages
-pkgs = find_packages('src')
+pkgs = find_namespace_packages('src')
 
 pkg_data = {}
 
@@ -59,23 +59,13 @@ setup_kwds = dict(
     
     
     package_data=pkg_data,
-    setup_requires=[
-        ],
-    install_requires=[
-        "numpy<2.0",
-        "pandas>=1.5",
-        "joblib>=1.0",
-        ],
-    tests_require=[
-        "pytest",
-        ],
-    entry_points={},
     keywords='',
     )
 # #}
 # change setup_kwds below before the next pkglts tag
 
-setup_kwds["entry_points"] = {"console_scripts": ["gen = modfilegen.main:main"]}
+# Entry points now defined in pyproject.toml [project.scripts]
+# setup_kwds["entry_points"] = {"console_scripts": ["gen = modfilegen.main:main"]}
 
 # do not change things below
 # {# pkglts, pysetup.call

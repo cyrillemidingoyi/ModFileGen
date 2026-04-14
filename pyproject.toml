@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "modfilegen"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Generate and run model input files for different crop models based on a standardized shared database"
 readme = "README.rst"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Cyrille Ahmed Midingoyi", email = "cyrille_ahmed.midingoyi@cirad.fr"},
 ]
@@ -19,7 +19,6 @@ keywords = ["crop models", "DSSAT", "STICS", "APSIM", "agricultural modeling", "
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -59,8 +58,11 @@ Issues = "https://github.com/CropModelingPlatform/ModFileGen/issues"
 gen = "modfilegen.main:main"
 
 [tool.setuptools]
-packages = ["modfilegen"]
 package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
 
 [tool.setuptools.dynamic]
 version = {attr = "modfilegen.version.__version__"}
