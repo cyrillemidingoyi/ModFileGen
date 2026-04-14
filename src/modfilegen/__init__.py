@@ -1,4 +1,5 @@
 
+from modfilegen.version import __version__
 
 # Global variables
 GlobalVariables = {"storeNumMinSimu" : 0,
