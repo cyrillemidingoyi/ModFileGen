@@ -105,15 +105,17 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "codefracappN")
         fileContent += self.format_item(DT, "fertilisation.Qtot_N",fieldIt=1)
 
-        fetchallquery2 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti
-        FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
+        fetchallquery2 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti, 
+        CropManagement.InoFertiPolicyCode AS InoFertiPolicyCode FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
         INNER JOIN (CropManagement INNER JOIN SimUnitList On CropManagement.idMangt = SimUnitList.idMangt) On InorganicFertilizationPolicy.InorgFertiPolicyCode =
         CropManagement.InoFertiPolicyCode where idSim='%s';"""%(ST[-3])
         
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)
         fileContent += "nbinterventions\n"
-        fileContent += format(DS2.shape[0], ".0f") + "\n"
-        if DS2.shape[0] > 0:
+        if int(DS2.iloc[0]["InoFertiPolicyCode"]) == 0 :
+            fileContent += "0\n"
+        else:
+            fileContent += format(DS2.shape[0], ".0f") + "\n"
             for i in range(DS2.shape[0]):
                 fileContent += "opp1\n"
                 fileContent += str(int(DS2.iloc[i]["sowingdate"] + DS2.iloc[i]["Dferti"])) + " "
