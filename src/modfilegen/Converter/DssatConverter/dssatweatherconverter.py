@@ -8,7 +8,7 @@ class DssatweatherConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection,usmdir):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection,usmdir, thirdyear):
         res = {}
         try:
             #print("Exporting Dssat Weather")
@@ -66,14 +66,18 @@ class DssatweatherConverter(Converter):
                 'VAPR': "{:6.2f}",
                 'SUNH': "{:6.1f}"
             }
-            for i in range(0, 2):
-                Year = int(Year) + i
+            if thirdyear == 1:
+                N = 3
+            else:
+                N = 2
+            for i in range(0, N):
+                Year_i = int(Year) + i
                 file_name = ""
                 for row in rows1:
                     fileContent =  ""
                     fileNameArray[0] = Mngt.upper() 
-                    fileNameArray[1] = str(Year)[2:4]
-                    fileContent += f"*WEATHER DATA : {Site} , {str(Year)}\n\n"
+                    fileNameArray[1] = str(Year_i)[2:4]
+                    fileContent += f"*WEATHER DATA : {Site} , {str(Year_i)}\n\n"
                     fileContent += "@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\n"
                     fileContent += v_fmt_general['INSI'].format(Site[0:4])
                     fileContent += v_fmt_general['LAT'].format(row['latitudeDD'])
@@ -84,8 +88,8 @@ class DssatweatherConverter(Converter):
                     fileContent += v_fmt_general["REFHT"].format(float(refht))
                     fileContent += v_fmt_general["WNDHT"].format(float(wndht)) + "\n"
                                             
-                    Year = str(Year)
-                    fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' and year='" + Year + "' ORDER BY w_date ;"  
+                    #Year = str(Year)
+                    fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' and year='" + str(Year_i) + "' ORDER BY w_date ;"  
                     DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
                     rows = DA.to_dict(orient='records')
                     fileNameArray[2] = "01" 

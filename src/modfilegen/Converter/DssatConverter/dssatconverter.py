@@ -72,7 +72,7 @@ def write_file(directory, filename, content):
         print(f"Error writing file {filename}: {e}")    
         
 def process_chunk(*args):
-    chunk, mi, md, directoryPath,pltfolder, dt = args
+    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear = args
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -87,7 +87,7 @@ def process_chunk(*args):
     for i, row in enumerate(chunk):
         # Periodically clear caches to free memory
         if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
-            print(f"🗑️ Clearing caches at row {i} to free memory", flush=True)
+            print(f" Clearing caches at row {i} to free memory", flush=True)
             weathertable.clear()
             soiltable.clear()
             # Also trigger garbage collection
@@ -108,7 +108,7 @@ def process_chunk(*args):
             climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
             if climid not in weathertable:
                 weatherconverter = dssatweatherconverter.DssatweatherConverter()
-                r = weatherconverter.export(simPath,  ModelDictionary_Connection,MasterInput_Connection, usmdir)
+                r = weatherconverter.export(simPath,  ModelDictionary_Connection,MasterInput_Connection, usmdir, thirdyear)
                 weathertable[climid] = r
                 del weatherconverter  # Free converter
             else:
@@ -281,6 +281,7 @@ def main():
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
     parts = GlobalVariables["parts"]
+    thirdyear = GlobalVariables["thirdyear"]
     export(mi, md)
 
     import uuid
@@ -298,7 +299,7 @@ def main():
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     del data  # Free original data list after chunking
     
-    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks]
+    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear) for chunk in chunks]
     del chunks  # Free chunks list after creating args_list
     
     # Create a Pool of worker processes
