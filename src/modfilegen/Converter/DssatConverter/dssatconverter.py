@@ -121,6 +121,8 @@ def process_chunk(*args):
                 values = list(r.values())
                 write_file(usmdir, Mngt.upper() + Year[2:4] + "01" + ".WTH", values[0])
                 write_file(usmdir, Mngt.upper() + str(int(Year)+1)[2:4] + "01" + ".WTH", values[1])
+                if thirdyear == 1:
+                    write_file(usmdir, Mngt.upper() + str(int(Year)+2)[2:4] + "01" + ".WTH", values[2])
                 #write_file(usmdir, keys[1], values[1])
             
             # soil
@@ -281,7 +283,7 @@ def main():
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
     parts = GlobalVariables["parts"]
-    thirdyear = GlobalVariables["thirdyear"]
+    thirdyear = int(GlobalVariables["thirdyear"])
     export(mi, md)
 
     import uuid
