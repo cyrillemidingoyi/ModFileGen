@@ -145,6 +145,19 @@ v_fmt_simulation = {"N" : "{:2.0f}", "GENERAL" : " {:<11s}", "NYERS" : "{:6.0f}"
 v_fmt_tillage = {"T" : "{:2.0f}", "TDATE" : "{:>6s}", "TIMPL" : "{:>6s}", "TDEP" : "{:6.0f}", "TNAME" : " {:<s}"}
 
 
+def is_leap_year(year):
+    return year % 4 == 0
+
+
+def format_dssat_yyddd(start_year, day):
+    year = int(start_year)
+    day = int(day)
+    while day > 365 + is_leap_year(year):
+        day -= 365 + is_leap_year(year)
+        year += 1
+    return str(year)[2:4] + str(day).rjust(3, "0")
+
+
 
 
 
@@ -658,14 +671,8 @@ def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, mas
         fileContent += v_fmt_fertilizers["F"].format(float(Dv))
         ifert = int(dataTable["sowingdate"].values[i] + dataTable["Dferti"].values[i])
         if dataTable["Dferti"].values[i] == 0: ifert += 1
-        if dataTable["StartYear"].values[i] % 4 == 0:
-            Bissext = 1
-        else:
-            Bissext = 0
-        if ifert > 365 + Bissext and Dv_ferti != "D":
-            fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i] + 1)[2:4] + str(ifert - 365 - Bissext).rjust(3, "0"))
-        elif ifert <= 365 + Bissext and Dv_ferti != "D":
-            fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i])[2:4] + str(ifert).rjust(3, "0"))
+        if Dv_ferti != "D":
+            fileContent += v_fmt_fertilizers["FDATE"].format(format_dssat_yyddd(dataTable["StartYear"].values[i], ifert))
         elif Dv_ferti == "D":
             fileContent += v_fmt_fertilizers["FDATE"].format(str(int(dataTable["Dferti"].values[i])))
         
@@ -721,14 +728,7 @@ def writeBlockResidues(dssat_tableName, idSim, dssat_tableId, modelDictionary_Co
         fileContent += v_fmt_residues["R"].format(float(Dv))
         ifert = int(dataTable["sowingdate"].values[i] + dataTable["Dferti"].values[i])
         if dataTable["Dferti"].values[i] == 0: ifert += 1
-        if dataTable["StartYear"].values[i] % 4 == 0:
-            Bissext = 1
-        else:
-            Bissext = 0
-        if ifert > 365 + Bissext:
-            fileContent += v_fmt_residues["RDATE"].format(str(dataTable["StartYear"].values[i] + 1)[2:4] + str(ifert - 365 - Bissext).rjust(3, "0"))
-        else:
-            fileContent += v_fmt_residues["RDATE"].format(str(dataTable["StartYear"].values[i])[2:4] + str(ifert).rjust(3, "0"))
+        fileContent += v_fmt_residues["RDATE"].format(format_dssat_yyddd(dataTable["StartYear"].values[i], ifert))
         if dataTable["idresidueDssat"].values : fileContent += v_fmt_residues["RCOD"].format(dataTable["idresidueDssat"].values[i])
         else: fileContent += format(" ", "6s")
         fileContent += v_fmt_residues["RAMT"].format(dataTable["Qmanure"].values[i])
@@ -915,14 +915,8 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
     
     iharv = int(dataTable["sowingdate"].values[0] + dataTable["DHarvest"].values[0])
     if dataTable["DHarvest"].values[0] == 0: iharv+= 1
-    if dataTable["StartYear"].values[0] % 4 == 0:
-        Bissext = 1
-    else:
-        Bissext = 0
-    if iharv > 365 + Bissext and Dv_hari != "D":
-        fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["StartYear"].values[0] + 1)[2:4] + str(iharv - 365 - Bissext).rjust(3, "0"))
-    elif iharv <= 365 + Bissext and Dv_hari != "D":
-        fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["StartYear"].values[0])[2:4] + str(iharv).rjust(3, "0"))
+    if Dv_hari != "D":
+        fileContent += v_fmt_harvest["HDATE"].format(format_dssat_yyddd(dataTable["StartYear"].values[0], iharv))
     elif Dv_hari == "D":
         fileContent += v_fmt_harvest["HDATE"].format(str(int(dataTable["DHarvest"].values[0])))
 
