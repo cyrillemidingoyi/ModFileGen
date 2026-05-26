@@ -1,3 +1,17 @@
+"""
+DSSAT Converter - Parallel processing with memory optimization
+
+MEMORY MANAGEMENT:
+- To reduce OOM errors, reduce 'nthreads' (fewer parallel workers)
+- Increase 'parts' to create smaller chunks per worker
+- Worker caches are auto-cleared every 50 rows
+- Results are written directly to disk (not held in memory)
+
+CONFIGURATION (in GlobalVariables):
+- nthreads: Number of parallel worker processes
+- parts: Number of chunks per thread (total chunks = nthreads * parts)
+"""
+
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
 from . import dssatweatherconverter, dssatcultivarconverter, dssatsoilconverter, dssatxconverter
@@ -58,16 +72,27 @@ def write_file(directory, filename, content):
         print(f"Error writing file {filename}: {e}")    
         
 def process_chunk(*args):
-    chunk, mi, md, directoryPath,pltfolder, dt = args
+    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear = args
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
     soiltable = {}
+    
+    # Clear caches periodically to prevent memory buildup
+    CACHE_CLEAR_INTERVAL = 50000
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
         
     for i, row in enumerate(chunk):
+        # Periodically clear caches to free memory
+        if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
+            print(f" Clearing caches at row {i} to free memory", flush=True)
+            weathertable.clear()
+            soiltable.clear()
+            # Also trigger garbage collection
+            import gc
+            gc.collect()
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
         try:
@@ -77,13 +102,15 @@ def process_chunk(*args):
             # cultivar 
             cultivarconverter = dssatcultivarconverter.DssatCultivarConverter()
             crop = cultivarconverter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
+            del cultivarconverter  # Free converter
 
             # weather
             climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
             if climid not in weathertable:
                 weatherconverter = dssatweatherconverter.DssatweatherConverter()
-                r = weatherconverter.export(simPath,  ModelDictionary_Connection,MasterInput_Connection, usmdir)
+                r = weatherconverter.export(simPath,  ModelDictionary_Connection,MasterInput_Connection, usmdir, thirdyear)
                 weathertable[climid] = r
+                del weatherconverter  # Free converter
             else:
                 ST = simPath.split(os.sep)
                 Mngt = ST[-1][:4]
@@ -94,6 +121,8 @@ def process_chunk(*args):
                 values = list(r.values())
                 write_file(usmdir, Mngt.upper() + Year[2:4] + "01" + ".WTH", values[0])
                 write_file(usmdir, Mngt.upper() + str(int(Year)+1)[2:4] + "01" + ".WTH", values[1])
+                if thirdyear == 1:
+                    write_file(usmdir, Mngt.upper() + str(int(Year)+2)[2:4] + "01" + ".WTH", values[2])
                 #write_file(usmdir, keys[1], values[1])
             
             # soil
@@ -104,6 +133,7 @@ def process_chunk(*args):
                 soilconverter = dssatsoilconverter.DssatSoilConverter()
                 r = soilconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 soiltable[soilid] = r
+                del soilconverter  # Free converter
             else:
                 write_file(usmdir, "XX.SOL", soiltable[soilid])
             
@@ -111,7 +141,8 @@ def process_chunk(*args):
             simPath = os.path.join(directoryPath, str(row["idsim"]),str(row["idMangt"]))
             usmdir = os.path.join(directoryPath, str(row["idsim"])) 
             xconverter = dssatxconverter.DssatXConverter()
-            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop)
+            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop, dt)
+            del xconverter  # Free converter
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
@@ -144,7 +175,8 @@ def process_chunk(*args):
                 continue
             df = transform(summary)
             dataframes.append(df)
-            if dt==1: os.remove(summary)            
+            if dt==1: os.remove(summary)
+            del df  # Free df after appending
         except Exception as ex:
             print("Error during Running Dssat  :", ex, file=sys.stderr, flush=True)
             traceback.print_exc()
@@ -153,11 +185,35 @@ def process_chunk(*args):
         print("No dataframes to concatenate.")
         ModelDictionary_Connection.close()
         MasterInput_Connection.close()
+        # Clear all caches
+        weathertable.clear()
+        soiltable.clear()
         return pd.DataFrame()
     # close connections
     ModelDictionary_Connection.close()
     MasterInput_Connection.close()
-    return pd.concat(dataframes, ignore_index=True)
+    
+    # Clear all caches before concatenation
+    weathertable.clear()
+    soiltable.clear()
+    
+    batch_size = 1000
+    if len(dataframes) <= batch_size:
+        result = pd.concat(dataframes, ignore_index=True)
+        del dataframes  # Free the list
+        return result
+    
+    result = pd.DataFrame()
+    for i in range(0, len(dataframes), batch_size):
+        batch = dataframes[i:i+batch_size]
+        batch_concat = pd.concat(batch, ignore_index=True)
+        result = pd.concat([result, batch_concat], ignore_index=True)
+        # Clear the batch to free memory
+        del batch
+        del batch_concat
+    
+    del dataframes  # Free the list
+    return result
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -214,9 +270,9 @@ def fetch_data_from_sqlite(masterInput):
     return rows
 
     
-def chunk_data(data, chunk_size):    
-    k, m = divmod(len(data), chunk_size)
-    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunk_size)]
+def chunk_data(data, parts, chunk_size):    
+    k, m = divmod(len(data), parts * chunk_size)
+    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunk_size * parts)]
     return sublists
 
 def main():
@@ -226,6 +282,8 @@ def main():
     pltfolder = GlobalVariables["pltfolder"]
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
+    parts = GlobalVariables["parts"]
+    thirdyear = int(GlobalVariables["thirdyear"])
     export(mi, md)
 
     import uuid
@@ -237,26 +295,56 @@ def main():
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
 
     data = fetch_data_from_sqlite(mi)
+    print(f"📊 Total simulations to process: {len(data)}", flush=True)
+    
     # Split data into chunks
-    chunks = chunk_data(data, chunk_size=nthreads)
-    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt) for chunk in chunks]
+    chunks = chunk_data(data, parts, chunk_size=nthreads)
+    del data  # Free original data list after chunking
+    
+    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear) for chunk in chunks]
+    del chunks  # Free chunks list after creating args_list
+    
     # Create a Pool of worker processes
     try:
-        start = time()        
-        processed_data_chunks = []
-        """with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk, args_list)) """
-
-        with parallel_backend("loky", n_jobs=nthreads):
-            processed_data_chunks = Parallel()(
-                delayed(process_chunk)(*args) for args in args_list
-            )
-        if not processed_data_chunks:
-            print("No data to process.")
+        start = time()
+        # Use joblib Parallel with loky backend, write results directly to final file
+        print(f"Processing {len(args_list)} chunks...", flush=True)
+        
+        write_header = True
+        total_chunks_written = 0
+        
+        with parallel_backend('loky', n_jobs=nthreads):
+            # Process in small batches to avoid holding all results in memory
+            batch_size = max(1, nthreads)  # Process nthreads chunks at a time
+            
+            for batch_idx in range(0, len(args_list), batch_size):
+                batch_args = args_list[batch_idx:batch_idx + batch_size]
+                
+                # Process this batch
+                batch_results = Parallel()(
+                    delayed(process_chunk)(*args) for args in batch_args
+                )
+                
+                # Write each result directly to final file
+                for i, chunk_df in enumerate(batch_results):
+                    if not chunk_df.empty:
+                        # Append to result file (write header only once)
+                        chunk_df.to_csv(result_path, mode='a', header=write_header, index=False)
+                        write_header = False  # Only write header for first chunk
+                        total_chunks_written += 1
+                        print(f"✅ Chunk {batch_idx + i + 1}/{len(args_list)}: {len(chunk_df)} rows written", flush=True)
+                    
+                    # Free memory immediately
+                    del chunk_df
+                
+                # Free batch results
+                del batch_results
+        
+        if total_chunks_written == 0:
+            print("No data to process.", flush=True)
             return
-        processed_data = pd.concat(processed_data_chunks, ignore_index=True)
-        processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
-        print(f"DSSAT total time, {time()-start}")
+        print(f"✅ Results saved to {result_path}", flush=True)
+        print(f"DSSAT total time, {time()-start}", flush=True)
     except Exception as ex:      
         print("Export not completed successfully!")
         traceback.print_exc()

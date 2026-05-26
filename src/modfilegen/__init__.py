@@ -1,4 +1,5 @@
 
+from modfilegen.version import __version__
 
 # Global variables
 GlobalVariables = {"storeNumMinSimu" : 0,
@@ -10,4 +11,8 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "dbCelsius" : "",
                     "dt" : 1,
                     "ori_MI" : "",
-                    "parts": 1}
+                    "parts": 1,
+                    "tempDir": "",
+                    "package": "",
+                    "thirdyear": 0
+                     }

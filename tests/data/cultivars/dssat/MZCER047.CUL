@@ -49,6 +49,51 @@ PC0002 2600-2650 GDD        . IB0001 185.0 0.750 850.0 800.0  8.50 49.00
 PC0003 2650-2700 GDD        . IB0001 212.0 0.750 850.0 800.0  8.50 49.00
 PC0004 2700-2750 GDD        . IB0001 240.0 0.750 850.0 800.0  8.50 49.00
 PC0005 2750-2800 GDD        . IB0001 260.0 0.750 850.0 800.0  8.50 49.00
+! Gatien calibration
+! some cultivar may have similar P5 - yet contrasting G3 e.g. BEOU and ZIAR01
+! this is because G3 is per day - not degree day - in warm climate less days, need to increase G3 to reach HI close to 0.5 to reach potential
+ZIAR01 Zimbabwe AR early    . IB0001 210.0 0.000 773.0 900.0  6.50 39.00
+BEOU00 Benin Agmip          . IB0001 180.0 0.000 787.0 900.0 12.00 39.00
+ZIAR02 Zimbabwe AR medium   . IB0001 235.0 0.000 800.0 900.0  6.50 42.00
+ZIAR03 Zimbabwe AR late     . IB0001 255.0 0.000 819.0 900.0  6.50 44.00
+ETBA00 Ethiopia Agmip       . IB0001 260.0 0.000 786.0 900.0  6.50 44.00
+RWBU00 Rwanda Agmip         . IB0001 280.0 0.000 786.0 900.0  6.50 44.00
+MANT00 Mali Agmip           . IB0001 290.0 0.000 723.0 900.0  8.50 45.00
+GHKP00 OBATAMPA Agmip       . IB0001 380.0 0.000 800.0 900.0  8.50 55.00
+
+! Gatien calibration
+! Generic cultivars of contrasting thermal time
+CU0850 Generic cultivar     . IB0001  73.0 0.000 550.0 900.0 10.00 39.00
+CU0900 Generic cultivar     . IB0001  85.0 0.000 565.0 900.0 10.00 39.50
+CU0950 Generic cultivar     . IB0001  97.0 0.000 580.0 900.0 10.00 40.50
+CU1000 Generic cultivar     . IB0001 109.0 0.000 595.0 900.0 10.00 40.75
+CU1050 Generic cultivar     . IB0001 120.0 0.000 610.0 900.0 10.00 41.00
+CU1100 Generic cultivar     . IB0001 131.0 0.000 626.0 900.0 10.00 41.50
+CU1150 Generic cultivar     . IB0001 143.0 0.000 641.0 900.0 10.00 42.00
+CU1200 Generic cultivar     . IB0001 155.0 0.000 656.0 900.0 10.00 42.50
+CU1250 Generic cultivar     . IB0001 166.0 0.000 671.0 900.0 10.00 43.00
+CU1300 Generic cultivar     . IB0001 178.0 0.000 686.0 900.0 10.00 43.50
+CU1350 Generic cultivar     . IB0001 189.0 0.000 702.0 900.0 10.00 44.00
+CU1400 Generic cultivar     . IB0001 201.0 0.000 717.0 900.0 10.00 44.50
+CU1450 Generic cultivar     . IB0001 213.0 0.000 732.0 900.0 10.00 45.00
+CU1500 Generic cultivar     . IB0001 224.0 0.000 747.0 900.0 10.00 45.50
+CU1550 Generic cultivar     . IB0001 236.0 0.000 762.0 900.0 10.00 46.00
+CU1600 Generic cultivar     . IB0001 247.0 0.000 778.0 900.0 10.00 46.50
+CU1650 Generic cultivar     . IB0001 259.0 0.000 793.0 900.0 10.00 47.00
+CU1700 Generic cultivar     . IB0001 271.0 0.000 808.0 900.0 10.00 47.50
+CU1750 Generic cultivar     . IB0001 282.0 0.000 823.0 900.0 10.00 48.00
+CU1800 Generic cultivar     . IB0001 294.0 0.000 838.0 900.0 10.00 48.50
+CU1850 Generic cultivar     . IB0001 305.0 0.000 854.0 900.0 10.00 49.00
+CU1900 Generic cultivar     . IB0001 317.0 0.000 869.0 900.0 10.00 49.50
+CU1950 Generic cultivar     . IB0001 329.0 0.000 884.0 900.0 10.00 50.00
+CU2000 Generic cultivar     . IB0001 340.0 0.000 899.0 900.0 10.00 50.50
+CU2050 Generic cultivar     . IB0001 352.0 0.000 914.0 900.0 10.00 51.00
+CU2100 Generic cultivar     . IB0001 363.0 0.000 930.0 900.0 10.00 51.50
+CU2150 Generic cultivar     . IB0001 375.0 0.000 945.0 900.0 10.00 52.00
+CU2200 Generic cultivar     . IB0001 387.0 0.000 960.0 900.0 10.00 52.50
+CU2250 Generic cultivar     . IB0001 398.0 0.000 975.0 900.0 10.00 53.00
+CU2300 Generic cultivar     . IB0001 410.0 0.000 990.0 900.0 10.00 53.50
+
 
 990001 LONG SEASON          . IB0001 320.0 0.520 940.0 620.0  6.00 38.90
 990002 MEDIUM SEASON        . IB0001 200.0 0.300 800.0 700.0  8.50 38.90
@@ -203,7 +248,6 @@ IM0005 APPOLO(BEN)          . IB0001 240.0 0.300 520.0 400.0 12.00 44.90
 IM0007 APPOLO(GHA)          . IB0001 340.0 0.300 750.0 455.0 12.50 78.00
 IM0008 APPOLO(Mali)         . IB0001 200.0 0.300 660.0 525.0  8.00 74.90
 IM0009 SOTUBAKA(RWND)       . IB0001 300.0 0.420 660.0 500.0 13.00 48.90
-GHKP00 OBATAMPA Agmip       . IB0001 320.0 0.500 750.0 650.0 10.50 78.00
 
 !Coefficients calibrated by Dzotsi and Singh in Togo, 2002.
 IF0018 TZE C0MP4C2          . IB0001 210.0 0.100 660.0 850.0  9.70 55.00
@@ -239,7 +283,6 @@ KY0018 KATUMANICOMP-II      . IB0001 125.0 0.500 660.0 450.0 10.50 75.00
 GH0010 OBATAMPA             . IB0001 280.0 0.000 750.0 540.0  7.50 40.00
 !Arise cultivars - GF 05112020
 990003 SHORT SEASON         . IB0001 110.0 0.300 680.0 820.4  6.60 38.90
-BEOU00 Benin Agmip          . IB0001 220.0 0.500 605.0 840.0  9.00 50.00
 990004 V.SHORT SEASON       . IB0001   5.0 0.300 680.0 820.4  6.60 38.90
 COUR00 Ev Arise             . IB0001   5.0 0.300 755.0 820.0  9.00 50.00
 LONG00 Ev Arise             . IB0001 159.0 0.500 810.0 700.0  8.00 55.00
