@@ -8,24 +8,27 @@ class SticsFictec1Converter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None):
         file_name = "fictec1.txt"
         fileContent = ""
         ST = directory_path.split(os.sep)
         T = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model='stics') AND ([Table]='st_fictec'));"
         DT = pd.read_sql_query(T, ModelDictionary_Connection)
+
+        season_filter = f"AND CropManagement.SeasonOrder = {int(season_order)}" if season_order is not None else ""
+
         fetchAllQuery = """SELECT SimUnitList.idsim, SimUnitList.idMangt, Soil.SoilTotalDepth, ListCultivars.idcultivarStics, CropManagement.sdens,
         CropManagement.sowingdate, CropManagement.SoilTillPolicyCode FROM Soil INNER JOIN (ListCultivars INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt)
-        ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)  where idSim= '%s' ;"""%(ST[-3])
+        ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)  where idSim= '%s' %s ;"""%(ST[-3], season_filter)
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
         rows = DA.to_dict(orient='records')
         rw = rows[0]
         fileContent += "nbinterventions\n"
-        fetchallquery2 = """SELECT SimUnitList.idsim, CropManagement.sowingdate, OrganicFOperations.Dferti, OrganicFOperations.OFNumber, OrganicFOperations.CNferti, 
-                OrganicFOperations.NFerti, OrganicFOperations.Qmanure, OrganicFOperations.TypeResidues, ListResidues.idresidueStics, CropManagement.SoilTillPolicyCode 
-                FROM ListResidues INNER JOIN ((OrganicFertilizationPolicy INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt) 
+        fetchallquery2 = """SELECT SimUnitList.idsim, CropManagement.sowingdate, OrganicFOperations.Dferti, OrganicFOperations.OFNumber, OrganicFOperations.CNferti,
+                OrganicFOperations.NFerti, OrganicFOperations.Qmanure, OrganicFOperations.TypeResidues, ListResidues.idresidueStics, CropManagement.SoilTillPolicyCode
+                FROM ListResidues INNER JOIN ((OrganicFertilizationPolicy INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt)
                 ON OrganicFertilizationPolicy.OFertiPolicyCode = CropManagement.OFertiPolicyCode) INNER JOIN OrganicFOperations ON OrganicFertilizationPolicy.OFertiPolicyCode
-                = OrganicFOperations.OFertiPolicyCode) ON ListResidues.TypeResidues = OrganicFOperations.TypeResidues where idSim='%s' Order by OFNumber ;"""%(ST[-3])
+                = OrganicFOperations.OFertiPolicyCode) ON ListResidues.TypeResidues = OrganicFOperations.TypeResidues where idSim='%s' %s Order by OFNumber ;"""%(ST[-3], season_filter)
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)   
         rows2 = DS2.to_dict(orient='records')
                
@@ -105,10 +108,10 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "codefracappN")
         fileContent += self.format_item(DT, "fertilisation.Qtot_N",fieldIt=1)
 
-        fetchallquery2 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti, 
+        fetchallquery2 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti,
         CropManagement.InoFertiPolicyCode AS InoFertiPolicyCode FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
         INNER JOIN (CropManagement INNER JOIN SimUnitList On CropManagement.idMangt = SimUnitList.idMangt) On InorganicFertilizationPolicy.InorgFertiPolicyCode =
-        CropManagement.InoFertiPolicyCode where idSim='%s';"""%(ST[-3])
+        CropManagement.InoFertiPolicyCode where idSim='%s' %s;"""%(ST[-3], season_filter)
         
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)
         fileContent += "nbinterventions\n"
