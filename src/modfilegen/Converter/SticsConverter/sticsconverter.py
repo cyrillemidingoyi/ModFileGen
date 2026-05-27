@@ -1028,9 +1028,10 @@ def process_chunk(*args):
     tempopar.clear()
     tectable.clear()
     initable.clear()
+    gc.collect()  # Trigger garbage collection to free memory
     
     # Concatenate in batches to reduce memory usage
-    batch_size = 10000
+    batch_size = 20000
     if len(dataframes) <= batch_size:
         result = pd.concat(dataframes, ignore_index=True)
         del dataframes  # Free the list
