@@ -17,6 +17,8 @@ from joblib import Parallel, delayed, parallel_backend
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import sys
+import gc
+
 
 
 def get_coord(d):
@@ -1028,7 +1030,7 @@ def process_chunk(*args):
     initable.clear()
     
     # Concatenate in batches to reduce memory usage
-    batch_size = 1000
+    batch_size = 10000
     if len(dataframes) <= batch_size:
         result = pd.concat(dataframes, ignore_index=True)
         del dataframes  # Free the list
@@ -1109,6 +1111,14 @@ def chunk_data(data, parts, chunk_size):    # values, num_sublists
     sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(parts * chunk_size)]
     return sublists
 
+def process_chunk_safe(idx, args):
+    try:
+        chunk_df = process_chunk(*args)
+        return idx, chunk_df, None
+    except Exception:
+        return idx, None, traceback.format_exc()
+    
+    
 def main():
     mi = GlobalVariables.get("dbMasterInput")
     md = GlobalVariables.get("dbModelsDictionary")
@@ -1117,8 +1127,8 @@ def main():
     nthreads = GlobalVariables.get("nthreads", 4)
     dt = GlobalVariables.get("dt", 1)
     parts = GlobalVariables.get("parts", 1)
-    tempDir = GlobalVariables.get("tempDir") or os.path.join(directoryPath, "temp")
-    package = GlobalVariables.get("package") or str(Path(__file__).resolve().parents[3])
+    tempDir = GlobalVariables.get("tempDir")
+    package = GlobalVariables.get("package")
 
     if not mi or not md:
         raise ValueError("dbMasterInput and dbModelsDictionary must be set in GlobalVariables")
@@ -1168,32 +1178,39 @@ def main():
         write_header = True
         total_chunks_written = 0
         
-        with parallel_backend('loky', n_jobs=nthreads):
-            # Process in small batches to avoid holding all results in memory
-            batch_size = max(1, nthreads)  # Process nthreads chunks at a time
-            
-            for batch_idx in range(0, len(args_list), batch_size):
-                batch_args = args_list[batch_idx:batch_idx + batch_size]
-                
-                # Process this batch
-                batch_results = Parallel()(
-                    delayed(process_chunk)(*args) for args in batch_args
+        results = Parallel(
+            n_jobs=nthreads,
+            backend="loky",
+            return_as="generator_unordered",
+            batch_size="auto"
+        )(
+            delayed(process_chunk_safe)(i, args)
+            for i, args in enumerate(args_list)
+        )        
+
+        for idx, chunk_df, error in results:
+            if error is not None:
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
+
+            if chunk_df is not None and not chunk_df.empty:
+                chunk_df.to_csv(
+                    result_path,
+                    mode="a",
+                    header=write_header,
+                    index=False
                 )
-                
-                # Write each result directly to final file
-                for i, chunk_df in enumerate(batch_results):
-                    if not chunk_df.empty:
-                        # Append to result file (write header only once)
-                        chunk_df.to_csv(result_path, mode='a', header=write_header, index=False)
-                        write_header = False  # Only write header for first chunk
-                        total_chunks_written += 1
-                        print(f"✅ Chunk {batch_idx + i + 1}/{len(args_list)}: {len(chunk_df)} rows written", flush=True)
-                    
-                    # Free memory immediately
-                    del chunk_df
-                
-                # Free batch results
-                del batch_results
+                write_header = False
+                total_chunks_written += 1
+
+                print(
+                    f"✅ Chunk {idx + 1}/{len(args_list)}: "
+                    f"{len(chunk_df)} rows written",
+                    flush=True
+                )
+
+            del chunk_df
+            gc.collect()
         
         if total_chunks_written == 0:
             print("No data to process.")
