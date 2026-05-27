@@ -1031,7 +1031,7 @@ def process_chunk(*args):
     gc.collect()  # Trigger garbage collection to free memory
     
     # Concatenate in batches to reduce memory usage
-    batch_size = 20000
+    batch_size = 60000
     if len(dataframes) <= batch_size:
         result = pd.concat(dataframes, ignore_index=True)
         del dataframes  # Free the list
@@ -1159,6 +1159,7 @@ def main():
     data = fetch_data_from_sqlite(mi)
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
+    n_simulations = len(data)
     print(f"📊 Total simulations to process: {len(data)}", flush=True)
     del data  # Free original data list after chunking
     # Create a Pool of worker processes
@@ -1173,49 +1174,81 @@ def main():
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
     try:
         start = time()
+        
         # Use joblib Parallel with loky backend, write results directly to final file
         print(f"Processing {len(args_list)} chunks...", flush=True)
         
         write_header = True
         total_chunks_written = 0
+        MAX_SIMULATIONS_IN_MEMORY = 100000  # Adjust this threshold based on available memory and typical simulation size
         
-        results = Parallel(
-            n_jobs=nthreads,
-            backend="loky",
-            return_as="generator_unordered",
-            batch_size="auto"
-        )(
-            delayed(process_chunk_safe)(i, args)
-            for i, args in enumerate(args_list)
-        )        
+        if n_simulations <= MAX_SIMULATIONS_IN_MEMORY:
+            print(f"Using in-memory concatenation for {n_simulations} simulations", flush=True)
+            processed_data_chunks = Parallel(n_jobs=nthreads, backend="loky")(
+                delayed(process_chunk)(*args) for args in args_list
+            )
 
-        for idx, chunk_df, error in results:
-            if error is not None:
-                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
-                continue
+            processed_data_chunks = [
+                df for df in processed_data_chunks
+                if df is not None and not df.empty
+            ]
 
-            if chunk_df is not None and not chunk_df.empty:
-                chunk_df.to_csv(
-                    result_path,
-                    mode="a",
-                    header=write_header,
-                    index=False
-                )
-                write_header = False
-                total_chunks_written += 1
+            if processed_data_chunks:
+                processed_data = pd.concat(processed_data_chunks, ignore_index=True)
+                processed_data.to_csv(result_path, index=False)
 
                 print(
-                    f"✅ Chunk {idx + 1}/{len(args_list)}: "
-                    f"{len(chunk_df)} rows written",
+                    f"✅ Written {len(processed_data)} rows to {result_path}",
                     flush=True
                 )
 
-            del chunk_df
+                del processed_data
+            else:
+                print("No data to process.")
+                return
+
+            del processed_data_chunks
             gc.collect()
         
-        if total_chunks_written == 0:
-            print("No data to process.")
-            return
+        else:
+            print(f"Using chunked processing for {n_simulations} simulations", flush=True)            
+            results = Parallel(
+                n_jobs=nthreads,
+                backend="loky",
+                return_as="generator_unordered",
+                batch_size="auto"
+            )(
+                delayed(process_chunk_safe)(i, args)
+                for i, args in enumerate(args_list)
+            )        
+
+            for idx, chunk_df, error in results:
+                if error is not None:
+                    print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                    continue
+
+                if chunk_df is not None and not chunk_df.empty:
+                    chunk_df.to_csv(
+                        result_path,
+                        mode="a",
+                        header=write_header,
+                        index=False
+                    )
+                    write_header = False
+                    total_chunks_written += 1
+
+                    print(
+                        f"✅ Chunk {idx + 1}/{len(args_list)}: "
+                        f"{len(chunk_df)} rows written",
+                        flush=True
+                    )
+
+                del chunk_df
+                gc.collect()
+            
+            if total_chunks_written == 0:
+                print("No data to process.")
+                return
         
         print(f"✅ Results saved to {result_path}")
         print(f"STICS total time: {time()-start:.2f}s", flush=True)
