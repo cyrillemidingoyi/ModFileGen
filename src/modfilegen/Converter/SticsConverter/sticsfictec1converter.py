@@ -38,7 +38,7 @@ class SticsFictec1Converter(Converter):
                     fileContent += "opp1\n"
                     fileContent += str(int(rows2[i]["sowingdate"]) + int(rows2[i]["Dferti"])) + " "
                     fileContent += str(rows2[i]["idresidueStics"]) + " "
-                    fileContent += str(rows2[i]["qmanure"]) + " "
+                    fileContent += str(rows2[i]["Qmanure"]) + " "
                     fileContent += str(rows2[i]["CNferti"] * rows2[i]["NFerti"]) + " "
                     fileContent += str(rows2[i]["CNferti"]) + " "
                     fileContent += str(rows2[i]["NFerti"]) + " "
@@ -226,7 +226,7 @@ class SticsFictec1Converter(Converter):
         
 
     def FormatSticsRawData(self, data, champ, precision  = 1):
-        rw2 = data[data["champ"]==champ]
+        rw2 = data[data["Champ"]==champ]
         res = rw2["dv"].values[0]
         return res
 

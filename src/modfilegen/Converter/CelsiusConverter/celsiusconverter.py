@@ -24,12 +24,12 @@ import uuid
 import sys
 import traceback
 import concurrent.futures
-from joblib import Parallel, delayed, parallel_backend
+from joblib import Parallel, delayed
 
 
 
-def create_idJourClim(row):
-    return row['IdDClim'] + '.' + str(row['annee']) + '.' + str(row['jda'])
+def create_idJourClim(df):
+    return df['IdDClim'].astype(str) + '.' + df['annee'].astype(str) + '.' + df['jda'].astype(str)
 
 def process_chunk(*args):
     
@@ -37,15 +37,15 @@ def process_chunk(*args):
     
     try:
 
-        idsims = tuple([row["idsim"] for row in chunk])
-        if len(idsims) == 1:
-            idsims = f"({idsims[0]})"
+        quoted = ", ".join(f"'{row['idsim']}'" for row in chunk)
+        idsims = f"({quoted})"
         print(f"Number of idsims", len(idsims), flush=True)
         print(f"creating new directory for process", flush=True)
-        new_dir = os.path.join(directoryPath, f"proc_{str(uuid.uuid4())}")
+        tmp_base = "/dev/shm" if os.path.isdir("/dev/shm") else directoryPath
+        new_dir = os.path.join(tmp_base, f"proc_{str(uuid.uuid4())}")
         while os.path.exists(new_dir):
-            new_dir = os.path.join(directoryPath, f"proc_{str(uuid.uuid4())}")
-        Path(new_dir).mkdir(parents=True, exist_ok=True) 
+            new_dir = os.path.join(tmp_base, f"proc_{str(uuid.uuid4())}")
+        Path(new_dir).mkdir(parents=True, exist_ok=True)
         new_db_cel = os.path.join(new_dir, "CelsiusV3nov17_dataArise.db")
         new_db_mi = os.path.join(new_dir, "MasterInput.db")
         shutil.copy(DB_Celsius, new_db_cel)
@@ -80,7 +80,7 @@ def process_chunk(*args):
             for dfc in pd.read_sql(query, conn, params=idPoints, chunksize=100_000):  
                 #df_clim_MI = pd.read_sql(query, conn)
                 dfc = dfc.rename(columns={"idPoint":"IdDClim", "year":"annee", "DOY":"jda", "Nmonth":"mois", "NdayM":"jour", "srad":"rg", "rain":"plu", "Etppm":"Etp"})
-                dfc['idjourclim'] = dfc.apply(create_idJourClim, axis=1)
+                dfc['idjourclim'] = create_idJourClim(dfc)
                 #df_sorted = df.sort_values(by='idjourclim')
                 dfc = dfc[['IdDClim', 'idjourclim', 'annee',"jda","mois","jour","tmax","tmin","tmoy","rg","plu",'Etp' ]]
                 dfc.to_sql('Dweather', new_conn_cel, if_exists='replace' if first else 'append', index=False)
@@ -160,10 +160,11 @@ def fetch_data_from_sqlite(masterInput):
     return rows
     
     
-def chunk_data(data, split,chunk_size):    # values, num_sublists 
-    k, m = divmod(len(data), split*chunk_size)
-    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(split*chunk_size)]
-    return sublists
+def chunk_data(data, split, chunk_size):    # values, num_sublists
+    n = split * chunk_size
+    k, m = divmod(len(data), n)
+    sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
+    return [s for s in sublists if s]  # drop empty chunks
 
 def main():
     mi= GlobalVariables["dbMasterInput"]
@@ -174,6 +175,7 @@ def main():
     dt = GlobalVariables["dt"]
     ori_mi = GlobalVariables["ori_MI"]
     split = GlobalVariables["parts"]
+    dailyoutput = GlobalVariables.get("dailyoutput", 0)
     
     data = fetch_data_from_sqlite(mi)
     print(f"📊 Total simulations to process: {len(data)}", flush=True)
@@ -195,34 +197,68 @@ def main():
             conn.execute("DELETE FROM OutputSynt")
             conn.commit()
         
-        total_rows = 0
+        # Clear SummaryOutput for Celsius if dailyoutput is enabled
+        if dailyoutput == 1:
+            with sqlite3.connect(mi) as conn:
+                conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Celsius'")
+                conn.commit()
         
-        with parallel_backend('loky', n_jobs=nthreads):
-            # Process in small batches to avoid holding all results in memory
-            batch_size = max(1, nthreads)  # Process nthreads chunks at a time
-            
-            for batch_idx in range(0, len(args_list), batch_size):
-                batch_args = args_list[batch_idx:batch_idx + batch_size]
+        total_rows = 0
+        total_chunks = len(args_list)
+
+        # Stream results as they complete — workers stay busy the whole time
+        results = Parallel(n_jobs=nthreads, backend="loky", return_as="generator_unordered")(
+            delayed(process_chunk)(*args) for args in args_list
+        )
+
+        for chunk_idx, chunk_df in enumerate(results):
+            if chunk_df is not None and not chunk_df.empty:
+                with sqlite3.connect(celsius) as conn:
+                    chunk_df.to_sql("OutputSynt", conn, if_exists='append', index=False)
+                    conn.commit()
                 
-                # Process this batch
-                batch_results = Parallel()(
-                    delayed(process_chunk)(*args) for args in batch_args
-                )
-                
-                # Write each result directly to database
-                for i, chunk_df in enumerate(batch_results):
-                    if not chunk_df.empty:
-                        with sqlite3.connect(celsius) as conn:
-                            chunk_df.to_sql("OutputSynt", conn, if_exists='append', index=False)
-                            conn.commit()
-                        total_rows += len(chunk_df)
-                        print(f"✅ Chunk {batch_idx + i + 1}/{len(args_list)}: {len(chunk_df)} rows written to database", flush=True)
+                if dailyoutput == 1:
+                    # Map OutputSynt columns to SummaryOutput columns
+                    column_mapping = {
+                        "idsim": "Idsim",
+                        "iplt": "Planting",
+                        "JulPheno1_1": "Emergence",
+                        "JulPheno1_4": "Ant",
+                        "JulPheno1_6": "Mat",
+                        "Biom(nrec)": "Biom_ma",
+                        "Grain(nrec)": "Yield",
+                        "LAI": "MaxLai",
+                        "SigmaSimEsol": "CumE",
+                        "Ngrain": "GNumber",
+                        "stockNsol": "SoilN",
+                        "SigmaCultEsol": "Transp"
+                    }
                     
-                    # Free memory immediately
-                    del chunk_df
+                    summary_df = chunk_df.rename(columns=column_mapping)
+                    summary_df["Model"] = "Celsius"
+                    summary_df["Texte"] = ""
+                    
+                    summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
+                                    "Biom_ma", "Yield", "GNumber", "MaxLai", "SoilN", "CumE", "Transp"]
+                    
+                    # Keep only the columns that exist
+                    available_cols = [col for col in summary_cols if col in summary_df.columns]
+                    summary_df = summary_df[available_cols]
+                    
+                    # Add missing columns as None
+                    for col in summary_cols:
+                        if col not in summary_df.columns:
+                            summary_df[col] = None
+                    
+                    summary_df = summary_df[summary_cols]
+                    
+                    with sqlite3.connect(mi) as conn:
+                        summary_df.to_sql("SummaryOutput", conn, if_exists='append', index=False)
+                        conn.commit()
                 
-                # Free batch results
-                del batch_results
+                total_rows += len(chunk_df)
+                print(f"✅ Chunk {chunk_idx + 1}/{total_chunks}: {len(chunk_df)} rows written to database", flush=True)
+            del chunk_df
         
         if total_rows == 0:
             print("No data to process.", flush=True)

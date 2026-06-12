@@ -21,6 +21,8 @@ import gc
 
 
 
+SUMMARY_COLS = ["Model","Idsim","Texte","Planting","Emergence","Ant","Mat","Biom_ma","Yield","GNumber","MaxLai","Nleac","SoilN","CroN_ma","CumE","Transp"]
+
 def get_coord(d):
     res = re.findall(r"([-]?\d+[.]?\d+)[_]", d)
     lat = float(res[0])
@@ -1129,6 +1131,7 @@ def main():
     parts = GlobalVariables.get("parts", 1)
     tempDir = GlobalVariables.get("tempDir")
     package = GlobalVariables.get("package")
+    dailyoutput = GlobalVariables.get("dailyoutput", 0)
 
     if not mi or not md:
         raise ValueError("dbMasterInput and dbModelsDictionary must be set in GlobalVariables")
@@ -1152,6 +1155,7 @@ def main():
         with open(proffile, "r") as f:
             prof = f.read()
     export(mi, md)
+
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
 
@@ -1251,6 +1255,25 @@ def main():
         
         print(f"✅ Results saved to {result_path}")
         print(f"STICS total time: {time()-start:.2f}s", flush=True)
+
+        if dailyoutput == 1:
+            summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
+                            "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac", "SoilN",
+                            "CroN_ma", "CumE", "Transp"]
+            df_result = pd.read_csv(result_path, usecols=lambda c: c in summary_cols)
+            for col in summary_cols:
+                if col not in df_result.columns:
+                    df_result[col] = None
+            df_result = df_result[summary_cols]
+            _conn = sqlite3.connect(mi)
+            _conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Stics'")
+            _conn.commit()
+            df_result.to_sql("SummaryOutput", _conn, if_exists="append", index=False)
+            _conn.commit()
+            _conn.close()
+            print(f"✅ {len(df_result)} rows inserted into SummaryOutput.", flush=True)
+            del df_result
+
     except Exception as ex:  
         print("Error during processing:", ex)
         traceback.print_exc() 

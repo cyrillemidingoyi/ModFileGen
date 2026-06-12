@@ -521,7 +521,7 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
             fileContent += v_fmt_init["SNH4"].format(float(Dv))
-            fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilLayers.Depth"].values[i]), ".2f").rjust(5)
+            fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["DepthCm"].values[i]), ".2f").rjust(5)
             fileContent += "\n"
     return fileContent
     
