@@ -417,7 +417,7 @@ def main():
             for col in summary_cols:
                 if col not in df_result.columns:
                     df_result[col] = None
-            df_result["ys"] = (df_result["Idsim"].str.split("_").str[2]).astype(int)
+            df_result["ys"] = (df_result["Planting"].astype(str).str[:4]).astype(int)
             df_result = df_result.replace(-99, np.nan)
             for col in ["Planting", "Emergence", "Ant", "Mat"]:
                 df_result[col] = extract_corrected_doy(df_result[col], df_result["ys"])
