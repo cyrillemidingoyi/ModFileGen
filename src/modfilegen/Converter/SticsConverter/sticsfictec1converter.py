@@ -112,7 +112,7 @@ class SticsFictec1Converter(Converter):
         
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)
         fileContent += "nbinterventions\n"
-        if int(DS2.iloc[0]["InoFertiPolicyCode"]) == 0 :
+        if DS2.iloc[0]["InoFertiPolicyCode"] == "0":
             fileContent += "0\n"
         else:
             fileContent += format(DS2.shape[0], ".0f") + "\n"
