@@ -63,7 +63,7 @@ def transform(fil, dt):
         FILE = fil_.readlines()
     #d_name = os.path.dirname(fil).split(os.path.sep)[-1]
     d_name = Path(fil).stem[len("Summary_"):]
-    if dt == 0:
+    if dt == 1:
         c = get_coord(d_name)
     outData = FILE[4:]
     varId = FILE[3]					# Read the raw variables
@@ -77,7 +77,7 @@ def transform(fil, dt):
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
 
-    if dt == 0:
+    if dt == 1:
         df['lon'] = c['lon']
         df['lat'] = c['lat']
         df['time'] = int(c['year'])
@@ -324,7 +324,6 @@ def main():
     dt = GlobalVariables["dt"]
     parts = GlobalVariables["parts"]
     thirdyear = int(GlobalVariables["thirdyear"])
-    dailyoutput = GlobalVariables.get("dailyoutput", 0)
     export(mi, md)
 
     import uuid
@@ -410,7 +409,7 @@ def main():
         print(f"✅ Results saved to {result_path}", flush=True)
         print(f"DSSAT total time: {time()-start:.2f}s", flush=True)
 
-        if dailyoutput == 1:
+        if dt == 0:
             summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
                             "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac", "SoilN",
                             "CroN_ma", "CumE", "Transp"]

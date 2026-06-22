@@ -178,7 +178,6 @@ def main():
     dt = GlobalVariables["dt"]
     ori_mi = GlobalVariables["ori_MI"]
     split = GlobalVariables["parts"]
-    dailyoutput = GlobalVariables.get("dailyoutput", 0)
     
     data = fetch_data_from_sqlite(mi)
     print(f"📊 Total simulations to process: {len(data)}", flush=True)
@@ -200,11 +199,10 @@ def main():
             conn.execute("DELETE FROM OutputSynt")
             conn.commit()
         
-        # Clear SummaryOutput for Celsius if dailyoutput is enabled
-        if dailyoutput == 1:
-            with sqlite3.connect(mi) as conn:
-                conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Celsius'")
-                conn.commit()
+        # Clear SummaryOutput for Celsius
+        with sqlite3.connect(mi) as conn:
+            conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Celsius'")
+            conn.commit()
         
         total_rows = 0
         total_chunks = len(args_list)
@@ -220,7 +218,7 @@ def main():
                     chunk_df.to_sql("OutputSynt", conn, if_exists='append', index=False)
                     conn.commit()
                 
-                if dailyoutput == 1:
+                if dt == 0:
                     # Map OutputSynt columns to SummaryOutput columns
                     column_mapping = {
                         "idsim": "Idsim",

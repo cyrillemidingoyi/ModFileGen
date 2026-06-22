@@ -46,14 +46,14 @@ def create_df_summary(f, dt):
     #d_name = os.path.dirname(f).split(os.path.sep)[-1]
     d_name = Path(f).stem[len("mod_rapport_"):]
     remove_comma(f)
-    if dt == 0: c = get_coord(d_name)
+    if dt == 1: c = get_coord(d_name)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
     df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
     df['time'] = df['ansemis'].astype(float).astype(int)
-    if dt == 0:
+    if dt == 1:
         df['lon'] = c['lon']
         df['lat'] = c['lat']
     return df
@@ -1132,7 +1132,6 @@ def main():
     parts = GlobalVariables.get("parts", 1)
     tempDir = GlobalVariables.get("tempDir")
     package = GlobalVariables.get("package")
-    dailyoutput = GlobalVariables.get("dailyoutput", 0)
 
     if not mi or not md:
         raise ValueError("dbMasterInput and dbModelsDictionary must be set in GlobalVariables")
@@ -1257,7 +1256,7 @@ def main():
         print(f"✅ Results saved to {result_path}")
         print(f"STICS total time: {time()-start:.2f}s", flush=True)
 
-        if dailyoutput == 1:
+        if dt == 0:
             summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
                             "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac", "SoilN",
                             "CroN_ma", "CumE", "Transp"]
