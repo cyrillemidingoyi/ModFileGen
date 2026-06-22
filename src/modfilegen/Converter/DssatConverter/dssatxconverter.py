@@ -1529,13 +1529,13 @@ class DssatXConverter(Converter):
         # Irrigation and water management
         dssat_tableName = "dssat_x_irrigation_water"
         dssat_tableId = "dssat_x_exp_id"
-        if int(rows[0]["IrrigationPolicyCode"]) == 0:
+        if rows[0]["IrrigationPolicyCode"] == "0":
             fileContent += "\n"
         else: fileContent += writeBlockIrrigationWater(dssat_tableName, dssat_tableId, modelDictionary_Connection)
         
         # Fertilizer
         dssat_tableName = "dssat_x_fertilizer"
-        if int(rows[0]["InoFertiPolicyCode"]) == 0:
+        if rows[0]["InoFertiPolicyCode"] == "0":
             fileContent += "\n"
         else: fileContent += writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, Dv_ferti)
         

@@ -14,5 +14,6 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "parts": 1,
                     "tempDir": "",
                     "package": "",
-                    "thirdyear": 0
+                    "thirdyear": 0,
+                    "dailyoutput": 0
                      }
