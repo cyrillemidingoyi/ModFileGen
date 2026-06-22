@@ -28,9 +28,14 @@ import pandas as pd
 from time import time
 import traceback
 from joblib import Parallel, delayed, parallel_backend   
-import re 
+import re
 import gc
 import calendar
+
+
+class _Stop99Error(RuntimeError):
+    """Raised when DSSAT reports a STOP99 error."""
+    pass
 
 
 def extract_corrected_doy(date_col, ys):
@@ -53,12 +58,13 @@ def get_coord(d):
     return {'lon': lon, 'lat': lat, 'year': year}
 
 
-def transform(fil):
+def transform(fil, dt):
     with open(fil, "r") as fil_:
         FILE = fil_.readlines()
     #d_name = os.path.dirname(fil).split(os.path.sep)[-1]
     d_name = Path(fil).stem[len("Summary_"):]
-    c = get_coord(d_name)
+    if dt == 0:
+        c = get_coord(d_name)
     outData = FILE[4:]
     varId = FILE[3]					# Read the raw variables
     varId = list(map(str, str.split(varId[1:])[13:]))		# Only get the useful variables
@@ -71,9 +77,10 @@ def transform(fil):
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
 
-    df['lon'] = c['lon']
-    df['lat'] = c['lat']
-    df['time'] = int(c['year'])
+    if dt == 0:
+        df['lon'] = c['lon']
+        df['lat'] = c['lat']
+        df['time'] = int(c['year'])
 
     return df
     
@@ -162,22 +169,31 @@ def process_chunk(*args):
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
                 result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],
-                                        #capture_output=True,
                                         stdout=subprocess.DEVNULL,
-                                        stderr=sys.stderr, 
-                                        check=True, 
-                                        text=True, 
+                                        stderr=subprocess.PIPE,   # capture to detect STOP99
+                                        check=False,              # manual check below
+                                        text=True,
                                         timeout=300)
+                # Always forward stderr to cluster error file
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr, end="", flush=True)
+                # Detect STOP99 by text in stderr or return code 99
+                if "STOP 99" in (result.stderr or "").upper() or result.returncode == 99:
+                    print(f"🚨 STOP99 | idsim={row['idsim']} | rc={result.returncode}",
+                          file=sys.stderr, flush=True)
+                    raise _Stop99Error(f"STOP99 in simulation {row['idsim']}")
+                if result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        result.returncode, result.args, None, result.stderr)
             except subprocess.TimeoutExpired as e:
                 print(f"⏰ DSSAT run timed out for {usmdir}. Killing... {e}", file=sys.stderr, flush=True)
-                # Forcefully terminate the process if it hangs
-                #result.kill()  # Python 3.9+
-                raise 
+                raise
+            except _Stop99Error:
+                raise
             except subprocess.CalledProcessError as e:
-                print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}", file=sys.stderr, flush=True)
-                #print("STDOUT:\n", e.stdout, file=sys.stdout, flush=True)
-                #if e.stderr: print("STDERR:\n", e.stderr, file=sys.stderr, flush=True)
-                raise 
+                print(f"❌ DSSAT run failed for {usmdir} with return code {e.returncode}",
+                      file=sys.stderr, flush=True)
+                raise
             except Exception as e:
                 print(f"Error running dssat: {e}", file=sys.stderr, flush=True)
                 traceback.print_exc()
@@ -187,12 +203,15 @@ def process_chunk(*args):
             if not os.path.exists(summary):
                 print(f"Summary file {summary} not found.")
                 continue
-            df = transform(summary)
+            df = transform(summary, dt)
             dataframes.append(df)
             if dt==1: os.remove(summary)
             del df  # Free df after appending
+        except _Stop99Error:
+            raise  # Stop chunk processing — let it propagate up
         except Exception as ex:
-            print("Error during Running Dssat  :", ex, file=sys.stderr, flush=True)
+            print(f"Error during Running Dssat [{row.get('idsim', '?')}]: {ex}",
+                  file=sys.stderr, flush=True)
             traceback.print_exc()
             continue
     if not dataframes:

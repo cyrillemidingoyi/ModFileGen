@@ -164,7 +164,7 @@ def format_dssat_yyddd(start_year, day):
 def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
     fileContent = ""
     
-    fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.NumTillOperations, OrganicFertilizationPolicy.NumOrganicFerti, CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
+    fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.SoilTillPolicyCode, OrganicFertilizationPolicy.OFertiPolicyCode, CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
         From OrganicFertilizationPolicy INNER Join (SoilTillPolicy INNER Join (CropManagement INNER Join SimUnitList 
         On CropManagement.idMangt = SimUnitList.idMangt) ON SoilTillPolicy.SoilTillPolicyCode = CropManagement.SoilTillPolicyCode) 
         ON OrganicFertilizationPolicy.OFertiPolicyCode = CropManagement.OFertiPolicyCode Where IdSim='%s'""" % (idSim)
@@ -210,18 +210,18 @@ def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, mast
     #rw = DT[DT["Champ"] == "LNIR"]  ######################### It depends on the context
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_treat["MI"].format(float(Dv))
-    if int(dataTable["IrrigationPolicyCode"].values[0]) == 0:
+    if dataTable["IrrigationPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MI"].format(0)
     else:
         fileContent += v_fmt_treat["MI"].format(1)
     #rw = DT[DT["Champ"] == "LNFER"] ######################### It depends on the context
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_treat["MF"].format(float(Dv))
-    if int(dataTable["InoFertiPolicyCode"].values[0]) == 0:
+    if dataTable["InoFertiPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MF"].format(0)
     else:
         fileContent += v_fmt_treat["MF"].format(1)
-    if int(dataTable["NumOrganicFerti"].values[0]) == 0:
+    if dataTable["OFertiPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MR"].format(0)
     else:
         fileContent += v_fmt_treat["MR"].format(1)
@@ -229,7 +229,7 @@ def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, mast
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_treat["MC"].format(float(Dv))
     fileContent += v_fmt_treat["MC"].format(0)
-    if int(dataTable["NumTillOperations"].values[0]) == 0:
+    if dataTable["SoilTillPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MT"].format(0)
     else:
         fileContent += v_fmt_treat["MT"].format(1)
@@ -1420,7 +1420,7 @@ class DssatXConverter(Converter):
         T = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],[Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] like 'dssat_x_%'));"
         DT = pd.read_sql_query(T, modelDictionary_Connection)
         
-        fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.NumTillOperations, OrganicFertilizationPolicy.NumOrganicFerti, 
+        fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.SoilTillPolicyCode, OrganicFertilizationPolicy.OFertiPolicyCode, 
         CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
         From OrganicFertilizationPolicy INNER Join (SoilTillPolicy INNER Join (CropManagement INNER Join SimUnitList 
         On CropManagement.idMangt = SimUnitList.idMangt) ON SoilTillPolicy.SoilTillPolicyCode = CropManagement.SoilTillPolicyCode) 

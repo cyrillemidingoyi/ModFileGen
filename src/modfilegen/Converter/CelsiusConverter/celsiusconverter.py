@@ -41,7 +41,7 @@ def process_chunk(*args):
         idsims = f"({quoted})"
         print(f"Number of idsims", len(idsims), flush=True)
         print(f"creating new directory for process", flush=True)
-        tmp_base = "/dev/shm" if os.path.isdir("/dev/shm") else directoryPath
+        tmp_base = directoryPath #"/dev/shm" if os.path.isdir("/dev/shm") else directoryPath
         new_dir = os.path.join(tmp_base, f"proc_{str(uuid.uuid4())}")
         while os.path.exists(new_dir):
             new_dir = os.path.join(tmp_base, f"proc_{str(uuid.uuid4())}")
@@ -118,7 +118,10 @@ def process_chunk(*args):
             print("convert celsius", flush=True)
             result = subprocess.run(["datamill", "convert", "-m", "celsius", "-dbMasterInput", new_db_mi, "-dbModelsDictionary", DB_MD, "-dbCelsius", new_db_cel],
                             check=True,
-                            text=True)
+                            text=True,
+                            capture_output=True)
+            print("STDERR:\n", result.stderr, flush=True)
+            print("STDOUT:\n", result.stdout, flush=True)
             print("✅ Celsius conversion completed successfully!", flush=True)
 
             print("run celsius")

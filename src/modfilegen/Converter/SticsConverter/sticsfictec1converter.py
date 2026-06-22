@@ -38,7 +38,7 @@ class SticsFictec1Converter(Converter):
                     fileContent += "opp1\n"
                     fileContent += str(int(rows2[i]["sowingdate"]) + int(rows2[i]["Dferti"])) + " "
                     fileContent += str(rows2[i]["idresidueStics"]) + " "
-                    fileContent += str(rows2[i]["Qmanure"]) + " "
+                    fileContent += str(rows2[i]["Qmanure"]/1000) + " "
                     fileContent += str(rows2[i]["CNferti"] * rows2[i]["NFerti"]) + " "
                     fileContent += str(rows2[i]["CNferti"]) + " "
                     fileContent += str(rows2[i]["NFerti"]) + " "

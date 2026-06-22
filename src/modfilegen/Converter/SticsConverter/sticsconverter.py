@@ -42,19 +42,20 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
     
-def create_df_summary(f):
+def create_df_summary(f, dt):
     #d_name = os.path.dirname(f).split(os.path.sep)[-1]
     d_name = Path(f).stem[len("mod_rapport_"):]
     remove_comma(f)
-    c = get_coord(d_name)
+    if dt == 0: c = get_coord(d_name)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
     df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
     df['time'] = df['ansemis'].astype(float).astype(int)
-    df['lon'] = c['lon']
-    df['lat'] = c['lat']
+    if dt == 0:
+        df['lon'] = c['lon']
+        df['lat'] = c['lat']
     return df
 
 
@@ -999,7 +1000,7 @@ def process_chunk(*args):
             if not os.path.exists(mod_r):
                 print(f"Warning: {mod_r} does not exist")
                 continue
-            df = create_df_summary(mod_r)
+            df = create_df_summary(mod_r, dt)
             dataframes.append(df)
             if dt==1: os.remove(mod_r)
             del df  # Free df after appending
