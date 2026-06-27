@@ -488,7 +488,7 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
     dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, Connection)
     siteColumnsHeader = "@C  ICBL  SH2O  SNH4  SNO3"
-    fetchAllQuery  = """SELECT DISTINCT Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', soil.bd as 'soil.bd', Soil.*,
+    fetchAllQuery  = """SELECT DISTINCT Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd as 'soil.bd', Soil.*,
                 SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', SoilLayers.*, 
                 InitialConditions.* FROM InitialConditions INNER JOIN 
                 ((Soil INNER JOIN SimUnitList ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)) LEFT JOIN SoilLayers ON Lower(Soil.IdSoil) = Lower(SoilLayers.idsoil))
@@ -521,7 +521,7 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
             fileContent += v_fmt_init["SNH4"].format(float(Dv))
-            fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["DepthCm"].values[i]), ".2f").rjust(5)
+            fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilTotalDepth"].values[i]), ".2f").rjust(5)
             fileContent += "\n"
     return fileContent
     
