@@ -879,7 +879,7 @@ def process_chunk(*args):
     tempopar = {}
     tectable = {}
     initable = {}
-    tmp_csv = os.path.join(tempDir, f"chunk_{idx}.csv")
+    tmp_csv = os.path.join(directoryPath, f"chunk_{idx}.csv")
     
     
     # Clear caches periodically to prevent memory buildup
@@ -903,7 +903,7 @@ def process_chunk(*args):
             gc.collect()
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
-        simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
+        simPath = os.path.join(tempDir, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
         usmdir = os.path.join(tempDir, str(row["idsim"]))
             
         try:
@@ -982,7 +982,7 @@ def process_chunk(*args):
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=180)
+                result = subprocess.run(["bash", bs, usmdir, tempDir, str(dt)],capture_output=True, check=True, text=True, timeout=180)
             except subprocess.TimeoutExpired as e:
                 print(f"⏰ STICS run timed out for {usmdir}. Killing...")
                 # Forcefully terminate the process if it hangs
@@ -1004,7 +1004,7 @@ def process_chunk(*args):
                 pass  # Add cleanup logic if needed
 
             # get the file "mod_rapport.sti" in the usmdir directory
-            mod_r = os.path.join(directoryPath, f"mod_rapport_{str(row['idsim'])}.sti") 
+            mod_r = os.path.join(tempDir, f"mod_rapport_{str(row['idsim'])}.sti") 
             if not os.path.exists(mod_r):
                 print(f"Warning: {mod_r} does not exist")
                 continue

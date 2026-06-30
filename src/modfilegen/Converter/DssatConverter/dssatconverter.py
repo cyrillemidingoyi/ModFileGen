@@ -93,8 +93,13 @@ def write_file(directory, filename, content):
         print(f"Error writing file {filename}: {e}")    
         
 def process_chunk(*args):
-    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear = args
-    dataframes = []
+    import psutil
+    import gc
+    proc = psutil.Process(os.getpid())
+    mem_before = proc.memory_info().rss / 1024**2  # MB
+    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear, tempDir, idx = args
+    tmp_csv = os.path.join(directoryPath, f"chunk_{idx}.csv")
+    #dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
     soiltable = {}
@@ -106,6 +111,7 @@ def process_chunk(*args):
     MasterInput_Connection = sqlite3.connect(mi)
         
     for i, row in enumerate(chunk):
+        write_header = not os.path.exists(tmp_csv)
         # Periodically clear caches to free memory
         if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
             print(f" Clearing caches at row {i} to free memory", flush=True)
@@ -117,8 +123,8 @@ def process_chunk(*args):
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
         try:
-            simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
-            usmdir = os.path.join(directoryPath, str(row["idsim"])) 
+            simPath = os.path.join(tempDir, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
+            usmdir = os.path.join(tempDir, str(row["idsim"])) 
              
             # cultivar 
             cultivarconverter = dssatcultivarconverter.DssatCultivarConverter()
@@ -147,8 +153,7 @@ def process_chunk(*args):
                 #write_file(usmdir, keys[1], values[1])
             
             # soil
-            simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idsoil"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
-            usmdir = os.path.join(directoryPath, str(row["idsim"])) 
+            simPath = os.path.join(tempDir, str(row["idsim"]), str(row["idsoil"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
             soilid =  row["idsoil"] + "." + row["idMangt"]
             if soilid not in soiltable:
                 soilconverter = dssatsoilconverter.DssatSoilConverter()
@@ -159,8 +164,7 @@ def process_chunk(*args):
                 write_file(usmdir, "XX.SOL", soiltable[soilid])
             
             # xfile
-            simPath = os.path.join(directoryPath, str(row["idsim"]),str(row["idMangt"]))
-            usmdir = os.path.join(directoryPath, str(row["idsim"])) 
+            simPath = os.path.join(tempDir, str(row["idsim"]),str(row["idMangt"])) 
             xconverter = dssatxconverter.DssatXConverter()
             xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop, dt)
             del xconverter  # Free converter
@@ -168,7 +172,7 @@ def process_chunk(*args):
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],
+                result = subprocess.run(["bash", bs, usmdir, tempDir, str(dt)],
                                         stdout=subprocess.DEVNULL,
                                         stderr=subprocess.PIPE,   # capture to detect STOP99
                                         check=False,              # manual check below
@@ -198,15 +202,17 @@ def process_chunk(*args):
                 print(f"Error running dssat: {e}", file=sys.stderr, flush=True)
                 traceback.print_exc()
                 raise
-            summary = os.path.join(directoryPath, f"Summary_{str(row['idsim'])}.OUT")
+            summary = os.path.join(tempDir, f"Summary_{str(row['idsim'])}.OUT")
             # if summary exists, process it
             if not os.path.exists(summary):
                 print(f"Summary file {summary} not found.")
                 continue
             df = transform(summary, dt)
-            dataframes.append(df)
+            df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+            #dataframes.append(df)
             if dt==1: os.remove(summary)
             del df  # Free df after appending
+            gc.collect()  # Force garbage collection after each iteration
         except _Stop99Error:
             raise  # Stop chunk processing — let it propagate up
         except Exception as ex:
@@ -214,7 +220,7 @@ def process_chunk(*args):
                   file=sys.stderr, flush=True)
             traceback.print_exc()
             continue
-    if not dataframes:
+    if not os.path.exists(tmp_csv):
         print("No dataframes to concatenate.")
         ModelDictionary_Connection.close()
         MasterInput_Connection.close()
@@ -229,8 +235,9 @@ def process_chunk(*args):
     # Clear all caches before concatenation
     weathertable.clear()
     soiltable.clear()
+    gc.collect()
     
-    batch_size = 1000
+    '''batch_size = 1000
     if len(dataframes) <= batch_size:
         result = pd.concat(dataframes, ignore_index=True)
         del dataframes  # Free the list
@@ -245,8 +252,10 @@ def process_chunk(*args):
         del batch
         del batch_concat
     
-    del dataframes  # Free the list
-    return result
+    del dataframes  # Free the list'''
+    mem_after = proc.memory_info().rss / 1024**2
+    print(f"Worker {os.getpid()} - mémoire: {mem_before:.0f}MB → {mem_after:.0f}MB (delta: {mem_after-mem_before:.0f}MB)", flush=True)
+    return tmp_csv  #result
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -318,15 +327,18 @@ def process_chunk_safe(idx, args):
 def main():
     mi= GlobalVariables["dbMasterInput"]
     md = GlobalVariables["dbModelsDictionary"]
-    directoryPath = GlobalVariables["directorypath"]
+    directoryPath = GlobalVariables["directorypath"] # correspond to inter
     pltfolder = GlobalVariables["pltfolder"]
     nthreads = GlobalVariables["nthreads"]
     dt = GlobalVariables["dt"]
     parts = GlobalVariables["parts"]
     thirdyear = int(GlobalVariables["thirdyear"])
+    tempDir = GlobalVariables.get("tempDir")
     export(mi, md)
 
     import uuid
+    os.makedirs(directoryPath, exist_ok=True)
+    os.makedirs(tempDir, exist_ok=True)
     # create a random name
     result_name = str(uuid.uuid4()) + "_dssat"
     result_path = os.path.join(directoryPath, f"{result_name}.csv")
@@ -342,7 +354,7 @@ def main():
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     del data  # Free original data list after chunking
     
-    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear) for chunk in chunks]
+    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear, tempDir, idx) for idx, chunk in enumerate(chunks)]
     del chunks  # Free chunks list after creating args_list
     
     try:
@@ -351,34 +363,8 @@ def main():
         
         write_header = True
         total_chunks_written = 0
-        MAX_SIMULATIONS_IN_MEMORY = 100000
-        
-        if n_simulations <= MAX_SIMULATIONS_IN_MEMORY:
-            print(f"Using in-memory concatenation for {n_simulations} simulations", flush=True)
-            processed_data_chunks = Parallel(n_jobs=nthreads, backend="loky")(
-                delayed(process_chunk)(*args) for args in args_list
-            )
-
-            processed_data_chunks = [
-                df for df in processed_data_chunks
-                if df is not None and not df.empty
-            ]
-
-            if processed_data_chunks:
-                processed_data = pd.concat(processed_data_chunks, ignore_index=True)
-                processed_data.to_csv(result_path, index=False)
-                print(f" Written {len(processed_data)} rows to {result_path}", flush=True)
-                del processed_data
-            else:
-                print("No data to process.", flush=True)
-                return
-
-            del processed_data_chunks
-            gc.collect()
-
-        else:
-            print(f"Using chunked processing for {n_simulations} simulations", flush=True)
-            results = Parallel(
+        print(f"Using chunked processing for {n_simulations} simulations", flush=True)
+        results = Parallel(
                 n_jobs=nthreads,
                 backend="loky",
                 return_as="generator_unordered",
@@ -388,22 +374,32 @@ def main():
                 for i, args in enumerate(args_list)
             )
 
-            for idx, chunk_df, error in results:
-                if error is not None:
-                    print(f" Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
-                    continue
+        for idx, tmp_path, error in results:
+            if error is not None:
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
 
-                if chunk_df is not None and not chunk_df.empty:
-                    chunk_df.to_csv(result_path, mode="a", header=write_header, index=False)
-                    write_header = False
-                    total_chunks_written += 1
-                    print(f" Chunk {idx + 1}/{len(args_list)}: {len(chunk_df)} rows written", flush=True)
+            if tmp_path is None or not os.path.exists(tmp_path):
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
+                
+            if os.path.exists(tmp_path):
+                df = pd.read_csv(tmp_path)
+                df.to_csv(result_path, mode="a", header=write_header, index=False)
+                write_header = False
+                total_chunks_written += 1
 
-                del chunk_df
+                print(
+                        f"✅ Chunk {idx + 1}/{len(args_list)}: "
+                        f"{len(df)} rows written",
+                        flush=True
+                )
+
+                del df
                 gc.collect()
-
+            
             if total_chunks_written == 0:
-                print("No data to process.", flush=True)
+                print("No data to process.")
                 return
 
         print(f"✅ Results saved to {result_path}", flush=True)
