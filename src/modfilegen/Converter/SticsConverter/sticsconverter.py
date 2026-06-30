@@ -871,7 +871,7 @@ def process_chunk(*args):
     import gc
     proc = psutil.Process(os.getpid())
     mem_before = proc.memory_info().rss / 1024**2  # MB
-    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir = args
+    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir, idx = args
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -879,7 +879,7 @@ def process_chunk(*args):
     tempopar = {}
     tectable = {}
     initable = {}
-    tmp_csv = os.path.join(tempDir, f"chunk_{os.getpid()}.csv")
+    tmp_csv = os.path.join(tempDir, f"chunk_{idx}.csv")
     
     
     # Clear caches periodically to prevent memory buildup
@@ -1010,6 +1010,7 @@ def process_chunk(*args):
                 continue
             df = create_df_summary(mod_r, dt)
             df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+            if dt==1: os.remove(mod_r)
             '''dataframes.append(df)
             if dt==1: os.remove(mod_r)'''
             del df  # Free df after appending
@@ -1183,8 +1184,9 @@ def main():
     del data  # Free original data list after chunking
     # Create a Pool of worker processes
     import uuid
-    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt, tempDir) for chunk in chunks]
+    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt, tempDir, idx) for idx, chunk in enumerate(chunks)]
     del chunks  # Free chunks list after creating args_list
+    gc.collect()
     # create a random name
     result_name = str(uuid.uuid4()) + "_stics"
     result_path = os.path.join(directoryPath, f"{result_name}.csv")
