@@ -18,6 +18,7 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import gc
+import psutil
 
 
 
@@ -866,6 +867,10 @@ def write_file(directory, filename, content):
         print(f"Error writing file {filename} in {directory}: {e}")
         
 def process_chunk(*args):
+    import psutil
+    import gc
+    proc = psutil.Process(os.getpid())
+    mem_before = proc.memory_info().rss / 1024**2  # MB
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir = args
     dataframes = []
     # Apply series of functions to each row in the chunk
@@ -874,6 +879,8 @@ def process_chunk(*args):
     tempopar = {}
     tectable = {}
     initable = {}
+    tmp_csv = os.path.join(tempDir, f"chunk_{os.getpid()}.csv")
+    
     
     # Clear caches periodically to prevent memory buildup
     CACHE_CLEAR_INTERVAL = 50000
@@ -882,6 +889,7 @@ def process_chunk(*args):
     MasterInput_Connection = sqlite3.connect(mi)
         
     for i, row in enumerate(chunk):
+        write_header = not os.path.exists(tmp_csv)
         # Periodically clear caches to free memory
         if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
             print(f"🗑️ Clearing caches at row {i} to free memory", flush=True)
@@ -1001,15 +1009,17 @@ def process_chunk(*args):
                 print(f"Warning: {mod_r} does not exist")
                 continue
             df = create_df_summary(mod_r, dt)
-            dataframes.append(df)
-            if dt==1: os.remove(mod_r)
+            df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+            '''dataframes.append(df)
+            if dt==1: os.remove(mod_r)'''
             del df  # Free df after appending
+            gc.collect()  # Force garbage collection to free memory
             
         except Exception as ex:
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
             raise
-    if not dataframes:
+    if not os.path.exists(tmp_csv):
         print("No dataframes to concatenate.")
         ModelDictionary_Connection.close()
         MasterInput_Connection.close()
@@ -1019,7 +1029,7 @@ def process_chunk(*args):
         tempopar.clear()
         tectable.clear()
         initable.clear()
-        return pd.DataFrame()
+        return None
 
     # close connections
     ModelDictionary_Connection.close()
@@ -1033,23 +1043,28 @@ def process_chunk(*args):
     initable.clear()
     
     # Concatenate in batches to reduce memory usage
-    batch_size = 60000
+    '''batch_size = 2000
     if len(dataframes) <= batch_size:
         result = pd.concat(dataframes, ignore_index=True)
         del dataframes  # Free the list
         return result
     
     result = pd.DataFrame()
+    batches = []
     for i in range(0, len(dataframes), batch_size):
+        batches 
         batch = dataframes[i:i+batch_size]
         batch_concat = pd.concat(batch, ignore_index=True)
         result = pd.concat([result, batch_concat], ignore_index=True)
         # Clear the batch to free memory
         del batch
-        del batch_concat
+        del batch_concat'''
     
-    del dataframes  # Free the list
-    return result
+    #del dataframes  # Free the list
+    gc.collect()
+    mem_after = proc.memory_info().rss / 1024**2
+    print(f"Worker {os.getpid()} - mémoire: {mem_before:.0f}MB → {mem_after:.0f}MB (delta: {mem_after-mem_before:.0f}MB)", flush=True)
+    return tmp_csv  #result
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -1123,6 +1138,7 @@ def process_chunk_safe(idx, args):
     
     
 def main():
+    import gc
     mi = GlobalVariables.get("dbMasterInput")
     md = GlobalVariables.get("dbModelsDictionary")
     directoryPath = GlobalVariables.get("directorypath", os.getcwd())
@@ -1183,39 +1199,9 @@ def main():
         
         write_header = True
         total_chunks_written = 0
-        MAX_SIMULATIONS_IN_MEMORY = 100000  # Adjust this threshold based on available memory and typical simulation size
         
-        if n_simulations <= MAX_SIMULATIONS_IN_MEMORY:
-            print(f"Using in-memory concatenation for {n_simulations} simulations", flush=True)
-            processed_data_chunks = Parallel(n_jobs=nthreads, backend="loky")(
-                delayed(process_chunk)(*args) for args in args_list
-            )
-
-            processed_data_chunks = [
-                df for df in processed_data_chunks
-                if df is not None and not df.empty
-            ]
-
-            if processed_data_chunks:
-                processed_data = pd.concat(processed_data_chunks, ignore_index=True)
-                processed_data.to_csv(result_path, index=False)
-
-                print(
-                    f"✅ Written {len(processed_data)} rows to {result_path}",
-                    flush=True
-                )
-
-                del processed_data
-            else:
-                print("No data to process.")
-                return
-
-            del processed_data_chunks
-            gc.collect()
-        
-        else:
-            print(f"Using chunked processing for {n_simulations} simulations", flush=True)            
-            results = Parallel(
+        print(f"Using chunked processing for {n_simulations} simulations", flush=True)            
+        results = Parallel(
                 n_jobs=nthreads,
                 backend="loky",
                 return_as="generator_unordered",
@@ -1225,28 +1211,28 @@ def main():
                 for i, args in enumerate(args_list)
             )        
 
-            for idx, chunk_df, error in results:
-                if error is not None:
-                    print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
-                    continue
+        for idx, tmp_path, error in results:
+            if error is not None:
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
 
-                if chunk_df is not None and not chunk_df.empty:
-                    chunk_df.to_csv(
-                        result_path,
-                        mode="a",
-                        header=write_header,
-                        index=False
-                    )
-                    write_header = False
-                    total_chunks_written += 1
+            if tmp_path is None or not os.path.exists(tmp_path):
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
+                
+            if os.path.exists(tmp_path):
+                df = pd.read_csv(tmp_path)
+                df.to_csv(result_path, mode="a", header=write_header, index=False)
+                write_header = False
+                total_chunks_written += 1
 
-                    print(
+                print(
                         f"✅ Chunk {idx + 1}/{len(args_list)}: "
-                        f"{len(chunk_df)} rows written",
+                        f"{len(df)} rows written",
                         flush=True
-                    )
+                )
 
-                del chunk_df
+                del df
                 gc.collect()
             
             if total_chunks_written == 0:

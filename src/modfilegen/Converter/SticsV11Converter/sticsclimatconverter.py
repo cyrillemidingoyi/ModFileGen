@@ -26,6 +26,16 @@ class SticsClimatConverter(Converter):
         # Process data in bulk
         DA['srad'] = DA['srad'].fillna(-999.9)
         DA['wind'] = DA['wind'].fillna(-999.9)
+        if 'vapeurp' in DA.columns:
+            vapeurp_values = pd.to_numeric(DA['vapeurp'], errors='coerce').fillna(vapeurp_dv)
+        else:
+            vapeurp_values = pd.Series(vapeurp_dv, index=DA.index)
+        
+        # same with co2, if it's not present in the DataFrame, create a Series with default value
+        if 'co2' in DA.columns:
+            co2_values = pd.to_numeric(DA['co2'], errors='coerce').fillna(co2_dv)
+        else:
+            co2_values = pd.Series(co2_dv, index=DA.index)
         
         # Format all lines at once
         lines = (
@@ -40,8 +50,8 @@ class SticsClimatConverter(Converter):
             DA['Etppm'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
             DA['rain'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
             DA['wind'].apply(lambda x: format(x, ".1f")).str.rjust(7) +
-            str(format(vapeurp_dv, ".1f")).rjust(7) +
-            str(format(co2_dv, ".1f")).rjust(7) + '\n'
+            vapeurp_values.apply(lambda x: format(x, ".1f")).str.rjust(7) +
+            co2_values.apply(lambda x: format(x, ".1f")).str.rjust(7) + '\n'
         )
         
         fileContent = ''.join(lines.tolist())        
