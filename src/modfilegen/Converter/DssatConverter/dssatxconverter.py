@@ -283,7 +283,7 @@ def writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Con
     rw = DT[DT["Champ"] == "ID_FIELD"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_fields["ID_FIELD"].format(Dv)
-    fileContent += v_fmt_fields["WSTA"].format(idMangt[0:4])
+    fileContent += v_fmt_fields["WSTA"].format(idMangt[0:4].upper())
     rw = DT[DT["Champ"] == "FLSA"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_fields["FLSA"].format(Dv)
