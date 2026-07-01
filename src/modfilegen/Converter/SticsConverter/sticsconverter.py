@@ -871,6 +871,7 @@ def process_chunk(*args):
     import gc
     proc = psutil.Process(os.getpid())
     mem_before = proc.memory_info().rss / 1024**2  # MB
+    mem_peak = mem_before
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir, idx = args
     dataframes = []
     # Apply series of functions to each row in the chunk
@@ -887,6 +888,8 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+    
+    dataframes = []
         
     for i, row in enumerate(chunk):
         write_header = not os.path.exists(tmp_csv)
@@ -1009,7 +1012,25 @@ def process_chunk(*args):
                 print(f"Warning: {mod_r} does not exist")
                 continue
             df = create_df_summary(mod_r, dt)
-            df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+            dataframes.append(df)
+
+            # Tracker le peak à chaque ajout
+            mem_current = proc.memory_info().rss / 1024**2
+            mem_peak = max(mem_peak, mem_current)
+ 
+            if len(dataframes) >= 5000:  # Write to CSV every 1000 dataframes
+                batch_df = pd.concat(dataframes, ignore_index=True)
+                batch_df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+                df_total_mb = sum(df.memory_usage(deep=True).sum() for df in dataframes) / 1024**2
+ 
+                print(f"Chunk {idx} - {len(dataframes)} DataFrames: "
+                  f"DataFrame size={df_total_mb:.1f}MB, "
+                  f"Peak RAM={mem_peak:.1f}MB, "
+                  f"Current RAM={mem_current:.1f}MB", 
+                  flush=True)
+                del batch_df  # Free the batch dataframe
+                del dataframes[:]  # Clear the list of dataframes
+                gc.collect()  # Force garbage collection to free memory
             if dt==1: os.remove(mod_r)
             '''dataframes.append(df)
             if dt==1: os.remove(mod_r)'''
@@ -1020,6 +1041,14 @@ def process_chunk(*args):
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
             raise
+
+    if dataframes:
+        batch_df = pd.concat(dataframes, ignore_index=True)
+        batch_df.to_csv(tmp_csv, mode='a', header=(not os.path.exists(tmp_csv)), index=False)
+        del batch_df
+        del dataframes[:]
+        gc.collect() 
+    
     if not os.path.exists(tmp_csv):
         print("No dataframes to concatenate.")
         ModelDictionary_Connection.close()
