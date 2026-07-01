@@ -884,7 +884,7 @@ def process_chunk(*args):
     
     
     # Clear caches periodically to prevent memory buildup
-    CACHE_CLEAR_INTERVAL = 50000
+    CACHE_CLEAR_INTERVAL = 100000
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
@@ -920,7 +920,7 @@ def process_chunk(*args):
                 tempoparConverter = sticstempoparconverter.SticsTempoparConverter()
                 r = tempoparConverter.export(simPath, MasterInput_Connection, tppar, usmdir)
                 tempopar[tempoparid] = r
-                del tempoparConverter  # Free converter object
+                #del tempoparConverter  # Free converter object
             else:
                 write_file(usmdir, "tempopar.sti", tempopar[tempoparid])
 
@@ -929,11 +929,11 @@ def process_chunk(*args):
             if soilid not in soiltable:
                 paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
                 r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
-                del paramsolconverter  # Free converter
+                #del paramsolconverter  # Free converter
                 stationconverter = sticsstationconverter.SticsStationConverter()
                 r2 = stationconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, rap, var, prof, usmdir)         
                 soiltable[soilid] = [r1, r2]
-                del stationconverter  # Free converter
+                #del stationconverter  # Free converter
             else:
                 write_file(usmdir, "param.sol", soiltable[soilid][0])
                 write_file(usmdir, "station.txt", soiltable[soilid][1][0])
@@ -945,7 +945,7 @@ def process_chunk(*args):
             # NewTravail
             newtravailconverter = sticsnewtravailconverter.SticsNewTravailConverter()
             newtravailconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
-            del newtravailconverter  # Free converter
+            #del newtravailconverter  # Free converter
             
             # Init  
             iniid =  ".".join([str(row["idsoil"]), str(row["idIni"])])    
@@ -953,7 +953,7 @@ def process_chunk(*args):
                 ficiniconverter = sticsficiniconverter.SticsFicIniConverter()
                 r = ficiniconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 initable[iniid] = r
-                del ficiniconverter  # Free converter
+                #del ficiniconverter  # Free converter
             else:
                 write_file(usmdir, "ficini.txt", initable[iniid])
             
@@ -963,7 +963,7 @@ def process_chunk(*args):
                 climatconverter = sticsclimatconverter.SticsClimatConverter()
                 r = climatconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 weathertable[climid] = r
-                del climatconverter  # Free converter
+                #del climatconverter  # Free converter
             else:
                 write_file(usmdir, "climat.txt", weathertable[climid])
             
@@ -973,14 +973,14 @@ def process_chunk(*args):
                 fictec1converter = sticsfictec1converter.SticsFictec1Converter()
                 r = fictec1converter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 tectable[tecid] = r
-                del fictec1converter  # Free converter
+                #del fictec1converter  # Free converter
             else:
                 write_file(usmdir, "fictec1.txt", tectable[tecid])
             
             # Ficplt1   
             ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
             ficplt1converter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
-            del ficplt1converter  # Free converter
+            #del ficplt1converter  # Free converter
 
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
@@ -1016,27 +1016,26 @@ def process_chunk(*args):
 
             # Tracker le peak à chaque ajout
             mem_current = proc.memory_info().rss / 1024**2
-            mem_peak = max(mem_peak, mem_current)
+            mem_peak_before = max(mem_peak, mem_current)
  
-            if len(dataframes) >= 5000:  # Write to CSV every 1000 dataframes
+            if len(dataframes) >= 15000:  # Write to CSV every 5000 dataframes
+                mem_peak_before = proc.memory_info().rss / 1024**2
                 batch_df = pd.concat(dataframes, ignore_index=True)
                 batch_df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
                 df_total_mb = sum(df.memory_usage(deep=True).sum() for df in dataframes) / 1024**2
+                mem_peak_after = proc.memory_info().rss / 1024**2
  
                 print(f"Chunk {idx} - {len(dataframes)} DataFrames: "
                   f"DataFrame size={df_total_mb:.1f}MB, "
-                  f"Peak RAM={mem_peak:.1f}MB, "
+                  f"mem_peak_before RAM={mem_peak_before:.1f}MB, "
+                  f"mem_peak_after RAM={mem_peak_after:.1f}MB, "
                   f"Current RAM={mem_current:.1f}MB", 
                   flush=True)
                 del batch_df  # Free the batch dataframe
-                del dataframes[:]  # Clear the list of dataframes
+                del dataframes  # Clear the list of dataframes
                 gc.collect()  # Force garbage collection to free memory
             if dt==1: os.remove(mod_r)
-            '''dataframes.append(df)
-            if dt==1: os.remove(mod_r)'''
-            del df  # Free df after appending
-            gc.collect()  # Force garbage collection to free memory
-            
+     
         except Exception as ex:
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
@@ -1046,7 +1045,7 @@ def process_chunk(*args):
         batch_df = pd.concat(dataframes, ignore_index=True)
         batch_df.to_csv(tmp_csv, mode='a', header=(not os.path.exists(tmp_csv)), index=False)
         del batch_df
-        del dataframes[:]
+        del dataframes
         gc.collect() 
     
     if not os.path.exists(tmp_csv):
