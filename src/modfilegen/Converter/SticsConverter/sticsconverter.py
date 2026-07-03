@@ -901,7 +901,6 @@ def process_chunk(*args):
             tempopar.clear()
             tectable.clear()
             initable.clear()
-            # Also trigger garbage collection
             import gc
             gc.collect()
         print(f"Iteration {i}", flush=True)
@@ -1014,9 +1013,8 @@ def process_chunk(*args):
             df = create_df_summary(mod_r, dt)
             dataframes.append(df)
 
-            # Tracker le peak à chaque ajout
-            mem_current = proc.memory_info().rss / 1024**2
-            mem_peak_before = max(mem_peak, mem_current)
+
+            mem_peak_before = proc.memory_info().rss / 1024**2
  
             if len(dataframes) >= 15000:  # Write to CSV every 5000 dataframes
                 mem_peak_before = proc.memory_info().rss / 1024**2
@@ -1028,13 +1026,12 @@ def process_chunk(*args):
                 print(f"Chunk {idx} - {len(dataframes)} DataFrames: "
                   f"DataFrame size={df_total_mb:.1f}MB, "
                   f"mem_peak_before RAM={mem_peak_before:.1f}MB, "
-                  f"mem_peak_after RAM={mem_peak_after:.1f}MB, "
-                  f"Current RAM={mem_current:.1f}MB", 
+                  f"mem_peak_after RAM={mem_peak_after:.1f}MB, ",
                   flush=True)
                 del batch_df  # Free the batch dataframe
-                del dataframes  # Clear the list of dataframes
+                del dataframes[:]  # Clear the list of dataframes
                 gc.collect()  # Force garbage collection to free memory
-            if dt==1: os.remove(mod_r)
+            #if dt==1: os.remove(mod_r)
      
         except Exception as ex:
             print("Error during Running STICS  :", ex)
@@ -1045,7 +1042,7 @@ def process_chunk(*args):
         batch_df = pd.concat(dataframes, ignore_index=True)
         batch_df.to_csv(tmp_csv, mode='a', header=(not os.path.exists(tmp_csv)), index=False)
         del batch_df
-        del dataframes
+        del dataframes[:]
         gc.collect() 
     
     if not os.path.exists(tmp_csv):
@@ -1261,7 +1258,7 @@ def main():
                         f"{len(df)} rows written",
                         flush=True
                 )
-
+                os.remove(tmp_path)  # Clean up temporary chunk file
                 del df
                 gc.collect()
             
