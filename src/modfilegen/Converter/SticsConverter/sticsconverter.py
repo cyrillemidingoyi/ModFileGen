@@ -1031,7 +1031,7 @@ def process_chunk(*args):
                 del batch_df  # Free the batch dataframe
                 del dataframes[:]  # Clear the list of dataframes
                 gc.collect()  # Force garbage collection to free memory
-            #if dt==1: os.remove(mod_r)
+            if dt==1: os.remove(mod_r)
      
         except Exception as ex:
             print("Error during Running STICS  :", ex)
