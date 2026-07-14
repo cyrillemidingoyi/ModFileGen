@@ -15,7 +15,7 @@ sed -i -z 's/codeseprapport\n1/codeseprapport\n2/g' -- tempopar.sti
 
 base=$(basename "$USM_DIR")
 if [ -f "mod_rapport.sti" ]; then
-    mv -- mod_rapport.sti "$input_dir/mod_rapport_$base.sti"
+    cp -- mod_rapport.sti "$input_dir/mod_rapport_$base.sti"
 fi
 if [ "$dt" -eq 1 ]; then
     (rm -rf -- "$USM_DIR" &)

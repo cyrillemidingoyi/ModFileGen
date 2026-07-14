@@ -963,7 +963,7 @@ def process_chunk(*args):
                 continue
             df = create_df_summary(mod_r, dt)
             dataframes.append(df)
-            if dt==1: os.remove(mod_r)
+            os.remove(mod_r)
             del df  # Free df after appending
             
         except Exception as ex:

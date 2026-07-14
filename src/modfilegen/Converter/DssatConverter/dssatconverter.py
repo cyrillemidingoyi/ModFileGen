@@ -32,6 +32,16 @@ import re
 import gc
 import calendar
 
+DSSAT_DAILY_OUTPUT_TABLE = "DssatDailyOutput"
+DSSAT_DAILY_FILES = {
+    "ET": "ET.out",
+    "PlantGro": "PlantGro.out",
+    "PlantN": "PlantN.out",
+    "SoilOrg": "SoilOrg.out",
+    "SoilWat": "SoilWat.Out",
+    "Weather": "Weather.out",
+}
+
 
 class _Stop99Error(RuntimeError):
     """Raised when DSSAT reports a STOP99 error."""
@@ -83,6 +93,103 @@ def transform(fil, dt):
         df['time'] = int(c['year'])
 
     return df
+
+
+def read_dssat_daily_file(file_path, source):
+    """Read one DSSAT daily output and prefix non-date columns by source."""
+    with open(file_path, "r") as output_stream:
+        lines = output_stream.readlines()
+
+    header_index = next(
+        (index for index, line in enumerate(lines) if line.lstrip().startswith("@YEAR")),
+        None,
+    )
+    if header_index is None:
+        raise ValueError(f"No @YEAR header found in {file_path}")
+
+    columns = lines[header_index].lstrip()[1:].split()
+    data = pd.read_csv(
+        file_path,
+        sep=r"\s+",
+        skiprows=header_index + 1,
+        names=columns,
+        header=None,
+        comment="*",
+    )
+    data["YEAR"] = pd.to_numeric(data["YEAR"], errors="coerce")
+    data["DOY"] = pd.to_numeric(data["DOY"], errors="coerce")
+    data = data.dropna(subset=["YEAR", "DOY"])
+    data["YEAR"] = data["YEAR"].astype(int)
+    data["DOY"] = data["DOY"].astype(int)
+    data = data.replace(-99, np.nan).replace(-99.0, np.nan)
+    data = data.rename(
+        columns={
+            column: f"{source}_{column}"
+            for column in data.columns
+            if column not in ("YEAR", "DOY")
+        }
+    )
+    return data
+
+
+def create_df_daily(output_files, idsim):
+    """Merge DSSAT daily modules on calendar year and day of year."""
+    daily = None
+    for source, file_path in output_files.items():
+        module_data = read_dssat_daily_file(file_path, source)
+        daily = (
+            module_data
+            if daily is None
+            else daily.merge(module_data, on=["YEAR", "DOY"], how="outer")
+        )
+    if daily is None:
+        return pd.DataFrame()
+    daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True)
+    daily.insert(0, "Idsim", str(idsim))
+    daily.insert(0, "Model", "Dssat")
+    return daily
+
+
+def append_dataframe_csv(dataframe, csv_path):
+    """Append while keeping a valid CSV when DSSAT modules change columns."""
+    if not os.path.exists(csv_path):
+        dataframe.to_csv(csv_path, index=False)
+        return
+
+    existing_columns = pd.read_csv(csv_path, nrows=0).columns.tolist()
+    new_columns = [column for column in dataframe.columns if column not in existing_columns]
+    all_columns = existing_columns + new_columns
+
+    if new_columns:
+        existing_data = pd.read_csv(csv_path)
+        existing_data = existing_data.reindex(columns=all_columns)
+        existing_data.to_csv(csv_path, index=False)
+        del existing_data
+
+    dataframe.reindex(columns=all_columns).to_csv(
+        csv_path,
+        mode="a",
+        header=False,
+        index=False,
+    )
+
+
+def align_sqlite_table(connection, table_name, dataframe):
+    """Add newly encountered DSSAT columns and align a frame to the table."""
+    table_info = connection.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+    existing_columns = [row[1] for row in table_info]
+
+    for column in dataframe.columns:
+        if column in existing_columns:
+            continue
+        sql_type = "REAL" if pd.api.types.is_numeric_dtype(dataframe[column]) else "TEXT"
+        escaped_column = column.replace('"', '""')
+        connection.execute(
+            f'ALTER TABLE "{table_name}" ADD COLUMN "{escaped_column}" {sql_type}'
+        )
+        existing_columns.append(column)
+
+    return dataframe.reindex(columns=existing_columns)
     
 
 def write_file(directory, filename, content):
@@ -97,8 +204,12 @@ def process_chunk(*args):
     import gc
     proc = psutil.Process(os.getpid())
     mem_before = proc.memory_info().rss / 1024**2  # MB
-    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear, tempDir, idx = args
+    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear, tempDir, idx, dailyoutput = args
     tmp_csv = os.path.join(directoryPath, f"chunk_{idx}.csv")
+    tmp_daily_csv = os.path.join(directoryPath, f"chunk_{idx}_dssat_daily.csv")
+    for stale_file in (tmp_csv, tmp_daily_csv):
+        if os.path.exists(stale_file):
+            os.remove(stale_file)
     #dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -172,7 +283,7 @@ def process_chunk(*args):
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, tempDir, str(dt)],
+                result = subprocess.run(["bash", bs, usmdir, tempDir, str(dt), str(dailyoutput)],
                                         stdout=subprocess.DEVNULL,
                                         stderr=subprocess.PIPE,   # capture to detect STOP99
                                         check=False,              # manual check below
@@ -209,6 +320,32 @@ def process_chunk(*args):
                 continue
             df = transform(summary, dt)
             df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+            if dailyoutput == 1:
+                expected_output_files = {
+                    source: os.path.join(tempDir, f"{source}_{row['idsim']}.out")
+                    for source in DSSAT_DAILY_FILES
+                }
+                missing = [
+                    path for path in expected_output_files.values()
+                    if not os.path.exists(path)
+                ]
+                if missing:
+                    print(
+                        f"Warning: DSSAT daily outputs missing for {row['idsim']}: "
+                        + ", ".join(os.path.basename(path) for path in missing),
+                        flush=True,
+                    )
+                output_files = {
+                    source: path
+                    for source, path in expected_output_files.items()
+                    if os.path.exists(path)
+                }
+                if output_files:
+                    daily_df = create_df_daily(output_files, row["idsim"])
+                    append_dataframe_csv(daily_df, tmp_daily_csv)
+                    del daily_df
+                    for output_file in output_files.values():
+                        os.remove(output_file)
             #dataframes.append(df)
             if dt==1: os.remove(summary)
             del df  # Free df after appending
@@ -227,7 +364,7 @@ def process_chunk(*args):
         # Clear all caches
         weathertable.clear()
         soiltable.clear()
-        return pd.DataFrame()
+        return None
     # close connections
     ModelDictionary_Connection.close()
     MasterInput_Connection.close()
@@ -255,7 +392,7 @@ def process_chunk(*args):
     del dataframes  # Free the list'''
     mem_after = proc.memory_info().rss / 1024**2
     print(f"Worker {os.getpid()} - mémoire: {mem_before:.0f}MB → {mem_after:.0f}MB (delta: {mem_after-mem_before:.0f}MB)", flush=True)
-    return tmp_csv  #result
+    return tmp_csv, (tmp_daily_csv if os.path.exists(tmp_daily_csv) else None)
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -334,6 +471,7 @@ def main():
     parts = GlobalVariables["parts"]
     thirdyear = int(GlobalVariables["thirdyear"])
     tempDir = GlobalVariables.get("tempDir")
+    dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
     export(mi, md)
 
     import uuid
@@ -354,7 +492,7 @@ def main():
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     del data  # Free original data list after chunking
     
-    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear, tempDir, idx) for idx, chunk in enumerate(chunks)]
+    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear, tempDir, idx, dailyoutput) for idx, chunk in enumerate(chunks)]
     del chunks  # Free chunks list after creating args_list
     
     try:
@@ -363,6 +501,7 @@ def main():
         
         write_header = True
         total_chunks_written = 0
+        daily_table_initialized = False
         print(f"Using chunked processing for {n_simulations} simulations", flush=True)
         results = Parallel(
                 n_jobs=nthreads,
@@ -374,13 +513,18 @@ def main():
                 for i, args in enumerate(args_list)
             )
 
-        for idx, tmp_path, error in results:
+        for idx, chunk_paths, error in results:
             if error is not None:
                 print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
                 continue
 
-            if tmp_path is None or not os.path.exists(tmp_path):
+            if chunk_paths is None:
                 print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
+
+            tmp_path, tmp_daily_path = chunk_paths
+            if not os.path.exists(tmp_path):
+                print(f"❌ Summary output is missing for chunk {idx + 1}", flush=True)
                 continue
                 
             if os.path.exists(tmp_path):
@@ -397,12 +541,50 @@ def main():
 
                 del df
                 gc.collect()
+
+            if dailyoutput == 1 and tmp_daily_path and os.path.exists(tmp_daily_path):
+                with sqlite3.connect(mi) as daily_conn:
+                    for daily_chunk in pd.read_csv(tmp_daily_path, chunksize=50000):
+                        if daily_table_initialized:
+                            daily_chunk = align_sqlite_table(
+                                daily_conn,
+                                DSSAT_DAILY_OUTPUT_TABLE,
+                                daily_chunk,
+                            )
+                            daily_chunk.to_sql(
+                                DSSAT_DAILY_OUTPUT_TABLE,
+                                daily_conn,
+                                if_exists="append",
+                                index=False,
+                            )
+                        else:
+                            daily_chunk.to_sql(
+                                DSSAT_DAILY_OUTPUT_TABLE,
+                                daily_conn,
+                                if_exists="replace",
+                                index=False,
+                            )
+                            daily_table_initialized = True
+                os.remove(tmp_daily_path)
             
             if total_chunks_written == 0:
                 print("No data to process.")
                 return
 
         print(f"✅ Results saved to {result_path}", flush=True)
+        if dailyoutput == 1:
+            if daily_table_initialized:
+                with sqlite3.connect(mi) as daily_conn:
+                    daily_conn.execute(
+                        f'CREATE INDEX IF NOT EXISTS "idx_{DSSAT_DAILY_OUTPUT_TABLE}_idsim_date" '
+                        f'ON "{DSSAT_DAILY_OUTPUT_TABLE}" ("Idsim", "YEAR", "DOY")'
+                    )
+                print(
+                    f"✅ Daily results inserted into {DSSAT_DAILY_OUTPUT_TABLE}.",
+                    flush=True,
+                )
+            else:
+                print("Warning: no DSSAT daily results were imported.", flush=True)
         print(f"DSSAT total time: {time()-start:.2f}s", flush=True)
 
         if dt == 0:

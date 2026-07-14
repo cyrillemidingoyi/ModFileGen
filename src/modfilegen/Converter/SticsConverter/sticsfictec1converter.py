@@ -46,7 +46,7 @@ class SticsFictec1Converter(Converter):
 
         Sql = """SELECT SoilTillPolicy.SoilTillPolicyCode, SoilTillageOperations.STNumber, SoilTillPolicy.NumTillOperations, SoilTillageOperations.DepthResUp, SoilTillageOperations.DepthResLow, SoilTillageOperations.DSTill
             FROM SoilTillPolicy INNER JOIN SoilTillageOperations ON SoilTillPolicy.SoilTillPolicyCode = SoilTillageOperations.SoilTillPolicyCode
-            where SoilTillPolicy.SoilTillPolicyCode= %s;"""%(rw["SoilTillPolicyCode"])
+            where SoilTillPolicy.SoilTillPolicyCode= '%s';"""%(rw["SoilTillPolicyCode"])
             
         Adp = pd.read_sql_query(Sql, master_input_connection)
         dataTill = Adp.to_dict(orient='records')

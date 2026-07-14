@@ -23,7 +23,7 @@ class SticsFictec1Converter(Converter):
 
         Sql = """SELECT SoilTillPolicy.SoilTillPolicyCode, SoilTillageOperations.STNumber, SoilTillPolicy.NumTillOperations, SoilTillageOperations.DepthResUp, SoilTillageOperations.DepthResLow, SoilTillageOperations.DSTill
             FROM SoilTillPolicy INNER JOIN SoilTillageOperations ON SoilTillPolicy.SoilTillPolicyCode = SoilTillageOperations.SoilTillPolicyCode
-            where SoilTillPolicy.SoilTillPolicyCode= %s;"""%(rw["SoilTillPolicyCode"])
+            where SoilTillPolicy.SoilTillPolicyCode= '%s';"""%(rw["SoilTillPolicyCode"])
         
         
 
@@ -246,7 +246,7 @@ class SticsFictec1Converter(Converter):
         rw = rows[1]
         Sql = """SELECT SoilTillPolicy.SoilTillPolicyCode, SoilTillageOperations.STNumber, SoilTillPolicy.NumTillOperations, SoilTillageOperations.DepthResUp, SoilTillageOperations.DepthResLow, SoilTillageOperations.DSTill
                 FROM SoilTillPolicy INNER JOIN SoilTillageOperations ON SoilTillPolicy.SoilTillPolicyCode = SoilTillageOperations.SoilTillPolicyCode
-                where SoilTillPolicy.SoilTillPolicyCode= %s;"""%(rw["SoilTillPolicyCode"])
+                where SoilTillPolicy.SoilTillPolicyCode= '%s';"""%(rw["SoilTillPolicyCode"])
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)   
         rows2 = DS2.to_dict(orient='records')
         Adp = pd.read_sql_query(Sql, master_input_connection)

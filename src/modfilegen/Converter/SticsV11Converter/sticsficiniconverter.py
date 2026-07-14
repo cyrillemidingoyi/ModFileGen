@@ -22,7 +22,6 @@ class SticsFicIniConverter(Converter):
         defaults = DT.set_index("Champ")["dv"].to_dict()
         
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
-        print(DA.head())
         rows = DA.to_dict(orient='records')
         
         for row in rows:

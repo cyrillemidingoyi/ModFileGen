@@ -26,6 +26,7 @@ class SticsClimatConverter(Converter):
         # Process data in bulk
         DA['srad'] = DA['srad'].fillna(-999.9)
         DA['wind'] = DA['wind'].fillna(-999.9)
+        DA['Etppm'] = pd.to_numeric(DA['Etppm'], errors='coerce').fillna(-999.9)
         if 'vapeurp' in DA.columns:
             vapeurp_values = pd.to_numeric(DA['vapeurp'], errors='coerce').fillna(vapeurp_dv)
         else:

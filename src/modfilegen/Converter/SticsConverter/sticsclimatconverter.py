@@ -26,6 +26,7 @@ class SticsClimatConverter(Converter):
         # Process data in bulk
         DA['srad'] = DA['srad'].fillna(-999.9)
         DA['wind'] = DA['wind'].fillna(-999.9)
+        DA['Etppm'] = DA['Etppm'].fillna(-999.9)
         
         # Format all lines at once
         lines = (
