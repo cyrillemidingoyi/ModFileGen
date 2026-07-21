@@ -3,8 +3,8 @@
 
 This converter follows the same grouping idea as the STICS successive
 converter, but uses DSSAT's native sequence mode (RNMODE = Q).  A group of
-SimUnitList rows is converted into one SQX experiment file and a DSSBatch.v47
-file with one batch row per rotation.
+SimUnitList rows is converted into one SQX experiment file and a versioned
+DSSBatch file with one batch row per rotation.
 """
 
 from __future__ import annotations
@@ -34,8 +34,20 @@ from .dssatconverter import fetch_data_from_sqlite, transform
 SUCCESSION_COLUMNS = ["idPoint", "idMangt", "idOption"]
 CONSISTENT_COLUMNS = ["idPoint", "idsoil", "idIni", "idOption"]
 SEQ_FILE_NAME = "ITSA1301.SQX"
-BATCH_FILE_NAME = "DSSBatch.v47"
 SUMMARY_PREFIX = "Summary_"
+
+
+def batch_filename_for_version(dssat_version):
+    batch_filenames = {
+        "v47": "DSSBatch.v47",
+        "v48": "DSSBatch.v48",
+    }
+    try:
+        return batch_filenames[dssat_version]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported DSSAT version {dssat_version!r}; expected v47 or v48"
+        ) from exc
 
 
 @dataclass
@@ -486,6 +498,7 @@ def generate_rotation_input(row, index, context, sequence_dir):
         context["master_input_connection"],
         context["pltfolder"],
         sequence_dir,
+        context["dssat_version"],
     )
 
     dssatsoilconverter.DssatSoilConverter().export(
@@ -502,6 +515,7 @@ def generate_rotation_input(row, index, context, sequence_dir):
         single_dir,
         crop,
         context["dt"],
+        context["dssat_version"],
     )
 
     sections = parse_sections(read_generated_xfile(single_dir))
@@ -583,11 +597,12 @@ def generate_successive_rotations(group, context, sequence_dir, terminal_harvest
     return rotations
 
 
-def create_context(mi, md, directory_path, pltfolder, dt):
+def create_context(mi, md, directory_path, pltfolder, dt, dssat_version="v47"):
     return {
         "directory_path": directory_path,
         "pltfolder": pltfolder,
         "dt": dt,
+        "dssat_version": dssat_version,
         "master_input_connection": sqlite3.connect(mi),
         "model_dictionary_connection": sqlite3.connect(md),
     }
@@ -608,9 +623,9 @@ def raise_on_dssat_error(usmdir, args):
         raise subprocess.CalledProcessError(99, args)
 
 
-def run_dssat_q(usmdir, output_dir, summary_id):
+def run_dssat_q(usmdir, output_dir, summary_id, dssat_version="v47"):
     script = Path(__file__).with_name("dssatrun_successive.sh")
-    args = ["bash", str(script), usmdir, output_dir, summary_id]
+    args = ["bash", str(script), usmdir, output_dir, summary_id, dssat_version]
     result = subprocess.run(
         args,
         stdout=subprocess.DEVNULL,
@@ -623,9 +638,9 @@ def run_dssat_q(usmdir, output_dir, summary_id):
     return result
 
 
-def run_dssat_b(usmdir, output_dir, dt):
+def run_dssat_b(usmdir, output_dir, dt, dssat_version="v47"):
     script = Path(__file__).with_name("dssatrun.sh")
-    args = ["bash", str(script), usmdir, output_dir, str(dt)]
+    args = ["bash", str(script), usmdir, output_dir, str(dt), "0", dssat_version]
     result = subprocess.run(
         args,
         stdout=subprocess.DEVNULL,
@@ -722,6 +737,7 @@ def process_single_row(row, context, directory_path, sequence_dir):
         context["master_input_connection"],
         context["pltfolder"],
         sequence_dir,
+        context["dssat_version"],
     )
     dssatweatherconverter.DssatweatherConverter().export(
         simulation_path(directory_path, row),
@@ -742,8 +758,9 @@ def process_single_row(row, context, directory_path, sequence_dir):
         sequence_dir,
         crop,
         context["dt"],
+        context["dssat_version"],
     )
-    run_dssat_b(sequence_dir, directory_path, context["dt"])
+    run_dssat_b(sequence_dir, directory_path, context["dt"], context["dssat_version"])
     summary = os.path.join(directory_path, f"Summary_{row['idsim']}.OUT")
     if not os.path.exists(summary):
         print(f"Summary file {summary} not found.", flush=True)
@@ -754,7 +771,9 @@ def process_single_row(row, context, directory_path, sequence_dir):
     return dataframe
 
 
-def process_successive_group(group, mi, md, directory_path, temp_dir, pltfolder, dt):
+def process_successive_group(
+    group, mi, md, directory_path, temp_dir, pltfolder, dt, dssat_version="v47"
+):
     validate_successive_group(group)
     group_id = safe_group_id(group)
     sequence_dir = os.path.join(temp_dir, group_id)
@@ -762,7 +781,7 @@ def process_successive_group(group, mi, md, directory_path, temp_dir, pltfolder,
     Path(sequence_dir).mkdir(parents=True, exist_ok=True)
     print(f"Processing DSSAT successive group {group_key(group)} with {len(group)} simulation(s)", flush=True)
 
-    context = create_context(mi, md, directory_path, pltfolder, dt)
+    context = create_context(mi, md, directory_path, pltfolder, dt, dssat_version)
     try:
         if len(group) == 1:
             return process_single_row(group[0], context, directory_path, sequence_dir)
@@ -781,9 +800,11 @@ def process_successive_group(group, mi, md, directory_path, temp_dir, pltfolder,
                 sequence_start,
             )
         )
-        Path(sequence_dir, BATCH_FILE_NAME).write_text(build_batch_file(rotations))
+        Path(sequence_dir, batch_filename_for_version(dssat_version)).write_text(
+            build_batch_file(rotations)
+        )
 
-        run_dssat_q(sequence_dir, directory_path, group_id)
+        run_dssat_q(sequence_dir, directory_path, group_id, dssat_version)
         summary = os.path.join(directory_path, f"{SUMMARY_PREFIX}{group_id}.OUT")
         if not os.path.exists(summary):
             print(f"Summary file {summary} not found.", flush=True)
@@ -813,6 +834,8 @@ def main():
     pltfolder = GlobalVariables.get("pltfolder")
     nthreads = max(1, int(GlobalVariables.get("nthreads", 4)))
     dt = int(GlobalVariables.get("dt", 0))
+    dssat_version = GlobalVariables.get("dssat", "v47")
+    batch_filename_for_version(dssat_version)
     temp_dir = GlobalVariables.get("tempDir") or os.path.join(directory_path, "temp_dssat_successive")
 
     if not mi or not md:
@@ -839,7 +862,16 @@ def main():
     try:
         with parallel_backend("loky", n_jobs=nthreads):
             results = Parallel()(
-                delayed(process_successive_group)(group, mi, md, directory_path, temp_dir, pltfolder, dt)
+                delayed(process_successive_group)(
+                    group,
+                    mi,
+                    md,
+                    directory_path,
+                    temp_dir,
+                    pltfolder,
+                    dt,
+                    dssat_version,
+                )
                 for group in groups
             )
 

@@ -1039,7 +1039,7 @@ def writeBlockGeneral(dssat_tableName, dssat_tableId, idSim, modelDictionary_Con
     fileContent += v_fmt_simulation["RSEED"].format(int(Dv.strip()))
     rw = DT[DT["Champ"] == "TITSIM"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["SNAME"].format(Dv.strip())
+    fileContent += v_fmt_simulation["SNAME"].format(Dv.strip()) + "\n"
     #rw = DT[DT["Champ"] == "CROP_MODE"]
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_simulation["SMODEL"].format(Dv.strip()) + "\n"
@@ -1421,7 +1421,7 @@ class DssatXConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dt):
+    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dt, dssat_version="v47"):
         ST = directory_path.split(os.sep)
         idSim = ST[-2]
         idMangt = ST[-1]
@@ -1585,11 +1585,22 @@ class DssatXConverter(Converter):
             print("Error during writing file")
             print(e)
             
-        #  Fichier DSSBatch.v47
+        batch_filenames = {
+            "v47": "DSSBatch.v47",
+            "v48": "DSSBatch.v48",
+        }
+        try:
+            batch_filename = batch_filenames[dssat_version]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported DSSAT version {dssat_version!r}; expected v47 or v48"
+            ) from exc
+
+        # Fichier DSSBatch correspondant à la version DSSAT sélectionnée
         dssat_tableName = "dssat_x_treatment"
         dssat_tableId = "dssat_x_exp_id"
         fileContent = writeBlockTreatment2(dssat_tableName, fileName, idSim, modelDictionary_Connection)
-        self.write_file(usmdir, "DSSBatch.v47", fileContent)
+        self.write_file(usmdir, batch_filename, fileContent)
         fileContent = ""
 
 

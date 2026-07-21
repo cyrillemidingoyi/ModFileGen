@@ -204,7 +204,7 @@ def process_chunk(*args):
     import gc
     proc = psutil.Process(os.getpid())
     mem_before = proc.memory_info().rss / 1024**2  # MB
-    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear, tempDir, idx, dailyoutput = args
+    chunk, mi, md, directoryPath,pltfolder, dt, thirdyear, tempDir, idx, dailyoutput, dssat_version = args
     tmp_csv = os.path.join(directoryPath, f"chunk_{idx}.csv")
     tmp_daily_csv = os.path.join(directoryPath, f"chunk_{idx}_dssat_daily.csv")
     for stale_file in (tmp_csv, tmp_daily_csv):
@@ -239,7 +239,7 @@ def process_chunk(*args):
              
             # cultivar 
             cultivarconverter = dssatcultivarconverter.DssatCultivarConverter()
-            crop = cultivarconverter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
+            crop = cultivarconverter.export(simPath, MasterInput_Connection, pltfolder, usmdir, dssat_version)
             del cultivarconverter  # Free converter
 
             # weather
@@ -277,13 +277,21 @@ def process_chunk(*args):
             # xfile
             simPath = os.path.join(tempDir, str(row["idsim"]),str(row["idMangt"])) 
             xconverter = dssatxconverter.DssatXConverter()
-            xconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, crop, dt)
+            xconverter.export(
+                simPath,
+                ModelDictionary_Connection,
+                MasterInput_Connection,
+                usmdir,
+                crop,
+                dt,
+                dssat_version,
+            )
             del xconverter  # Free converter
 
             # run dssat
             bs = os.path.join(Path(__file__).parent, "dssatrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, tempDir, str(dt), str(dailyoutput)],
+                result = subprocess.run(["bash", bs, usmdir, tempDir, str(dt), str(dailyoutput), dssat_version],
                                         stdout=subprocess.DEVNULL,
                                         stderr=subprocess.PIPE,   # capture to detect STOP99
                                         check=False,              # manual check below
@@ -472,6 +480,11 @@ def main():
     thirdyear = int(GlobalVariables["thirdyear"])
     tempDir = GlobalVariables.get("tempDir")
     dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
+    dssat_version = GlobalVariables.get("dssat", "v47")
+    if dssat_version not in dssatcultivarconverter.DSSAT_CULTIVAR_SUFFIXES:
+        raise ValueError(
+            f"Unsupported DSSAT version {dssat_version!r}; expected v47 or v48"
+        )
     export(mi, md)
 
     import uuid
@@ -492,11 +505,12 @@ def main():
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     del data  # Free original data list after chunking
     
-    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear, tempDir, idx, dailyoutput) for idx, chunk in enumerate(chunks)]
+    args_list = [(chunk, mi, md, directoryPath, pltfolder, dt, thirdyear, tempDir, idx, dailyoutput,dssat_version) for idx, chunk in enumerate(chunks)]
     del chunks  # Free chunks list after creating args_list
     
     try:
         start = time()
+        print("dssat version: ", dssat_version)
         print(f"Processing {len(args_list)} chunks...", flush=True)
         
         write_header = True
