@@ -34,12 +34,12 @@ import calendar
 
 DSSAT_DAILY_OUTPUT_TABLE = "DssatDailyOutput"
 DSSAT_DAILY_FILES = {
-    "ET": "ET.out",
-    "PlantGro": "PlantGro.out",
-    "PlantN": "PlantN.out",
-    "SoilOrg": "SoilOrg.out",
-    "SoilWat": "SoilWat.Out",
-    "Weather": "Weather.out",
+    "ET": "ET.OUT",
+    "PlantGro": "PlantGro.OUT",
+    "PlantN": "PlantN.OUT",
+    "SoilOrg": "SoilOrg.OUT",
+    "SoilWat": "SoilWat.OUT",
+    "Weather": "Weather.OUT",
 }
 
 
@@ -347,7 +347,7 @@ def process_chunk(*args):
                     for output_file in output_files.values():
                         os.remove(output_file)
             #dataframes.append(df)
-            if dt==1: os.remove(summary)
+            os.remove(summary)
             del df  # Free df after appending
             gc.collect()  # Force garbage collection after each iteration
         except _Stop99Error:

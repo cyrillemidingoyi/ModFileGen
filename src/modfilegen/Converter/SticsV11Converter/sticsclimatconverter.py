@@ -8,16 +8,55 @@ class SticsClimatConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
+    def export(
+        self,
+        directory_path,
+        ModelDictionary_Connection,
+        master_input_connection,
+        usmdir,
+        start_year=None,
+        end_year=None,
+    ):
         file_name = "climat.txt"
         fileContent = ""
         ST = directory_path.split(os.sep)        
         Site = ST[-2]
-        Year = ST[-1]
+        idsim = ST[-3]
+        Site = ST[-2]
+        if start_year is None or end_year is None:
+            simulation = master_input_connection.execute(
+                "SELECT StartYear, EndYear FROM SimUnitList WHERE idsim = ?",
+                (idsim,),
+            ).fetchone()
+            if simulation is None:
+                raise ValueError(f"Simulation {idsim!r} was not found in SimUnitList")
+            start_year = simulation[0] if start_year is None else start_year
+            end_year = simulation[1] if end_year is None else end_year
+        start_year = int(start_year)
+        end_year = int(end_year)
+        if end_year < start_year:
+            raise ValueError(
+                f"EndYear ({end_year}) must be greater than or equal to "
+                f"StartYear ({start_year}) for {idsim}"
+            )
         T = "Select   Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'sticsv11') And ([Table]= 'climat'));"
         DT = pd.read_sql_query(T, ModelDictionary_Connection)
-        fetchAllQuery = "select * from RaClimateD where idPoint='" + Site + "' And (Year=" + Year + " or Year=" + str(int(Year) + 1) + ") ORDER BY w_date;"
-        DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
+        fetchAllQuery = """
+            SELECT *
+            FROM RaClimateD
+            WHERE idPoint = ? AND Year BETWEEN ? AND ?
+            ORDER BY w_date
+        """
+        DA = pd.read_sql_query(
+            fetchAllQuery,
+            master_input_connection,
+            params=(Site, start_year, end_year),
+        )
+        if DA.empty:
+            raise ValueError(
+                f"No climate data for idPoint={Site}, years "
+                f"{start_year}-{end_year}"
+            )
         
         # Pre-cache default values
         vapeurp_dv = float(DT[DT["Champ"] == "vapeurp"]["dv"].values[0])

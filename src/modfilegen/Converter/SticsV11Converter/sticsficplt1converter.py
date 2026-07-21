@@ -9,12 +9,15 @@ class SticsFicplt1Converter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, master_input_connection, pltfolder, usmdir):
+    def export(self, directory_path, master_input_connection, pltfolder, usmdir, season_order=None):
         file_name = "ficplt1.txt"
         file_name2 = "ficplt2.txt"
         ST = directory_path.split(os.sep)
         sq = """SELECT SimUnitList.idsim as idsim, ListCultOption.FicPlt as fic 
-        FROM (ListCultOption INNER JOIN (ListCultivars INNER JOIN CropManagement ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON ListCultOption.CodePSpecies = ListCultivars.CodePSpecies) INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt where idSim= '%s' ;"""%(ST[-3])   
+        FROM (ListCultOption INNER JOIN (ListCultivars INNER JOIN CropManagement ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON ListCultOption.CodePSpecies = ListCultivars.CodePSpecies) INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt where idSim= '%s'"""%(ST[-3])
+        if season_order is not None:
+            sq += " AND CropManagement.SeasonOrder = %d" % int(season_order)
+        sq += " ORDER BY CropManagement.PlantOrder;"
         df_sim = pd.read_sql(sq, master_input_connection)
         rows = df_sim.to_dict('records')
         
@@ -26,6 +29,8 @@ class SticsFicplt1Converter(Converter):
             src_path2 = os.path.join(pltfolder, rows[1]["fic"])
             dest_path2 = os.path.join(usmdir, file_name2)
             shutil.copyfile(src_path2, dest_path2)
+
+        return [row["fic"] for row in rows]
 
 
 

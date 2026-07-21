@@ -8,7 +8,7 @@ class SticsFicIniConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None):
         fileName = "ficini.txt"
         file_lines = []
         fileContent = ""
@@ -23,17 +23,18 @@ class SticsFicIniConverter(Converter):
         
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
         rows = DA.to_dict(orient='records')
-        
         for row in rows:
             file_lines.append(":nbplantes:")
 
-            sql = """SELECT Max(CropManagement.PlantOrder) AS MaxDePlantOrder FROM CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt GROUP BY SimUnitList.[idSim] HAVING (((SimUnitList.[idSim])= '%s'));"""%(id_sim)
+            sql = """SELECT Max(CropManagement.PlantOrder) AS MaxDePlantOrder FROM CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt WHERE SimUnitList.idsim = '%s'"""%(id_sim)
+            if season_order is not None:
+                sql += " AND CropManagement.SeasonOrder = %d" % int(season_order)
             DA2 = pd.read_sql_query(sql, master_input_connection)
             rows2 = DA2.to_dict(orient='records')
             
             if len(rows2) > 0:
-                nbplt = len(rows2)
-                file_lines.append(str(rows2[0]["MaxDePlantOrder"]))
+                nbplt = rows2[0]["MaxDePlantOrder"]
+                file_lines.append(str(nbplt))
             else:
                 nbplt = 1
                 file_lines.append("1")
@@ -55,7 +56,6 @@ class SticsFicIniConverter(Converter):
             file_lines.append("densinitial")
             file_lines.append(f"{float(defaults['densinitial']):.1f} 0.0 0.0 0.0 0.0")
             file_lines.append(":plante:")
-
             if nbplt == 1:
                 file_lines.extend([""] * 4)  
                 file_lines.append("code_acti_reserve")
@@ -116,7 +116,22 @@ class SticsFicIniConverter(Converter):
                 file_lines.append(" ".join(no3_vals))
 
             file_lines.append(":NH4initf:")
-            file_lines.append(f"{defaults['NH4initf']} 0.0 0.0 0.0 0.0")
+            has_row_nh4 = "NH4initf" in row and pd.notna(row["NH4initf"])
+            default_nh4 = float(defaults["NH4initf"])
+            if row["SoilOption"].lower() == "simple":
+                nh4_value = float(row["NH4initf"]) if has_row_nh4 else default_nh4
+                file_lines.append(f"{nh4_value:.1f} 0.0 0.0 0.0 0.0")
+            else:
+                nh4_vals = []
+                for i in range(5):
+                    if i < len(jeu):
+                        if has_row_nh4 and len(jeu) > 0:
+                            nh4_vals.append(f"{float(row['NH4initf']) / len(jeu):.1f}")
+                        else:
+                            nh4_vals.append(f"{default_nh4:.1f}")
+                    else:
+                        nh4_vals.append("0.0")
+                file_lines.append(" ".join(nh4_vals))
 
             file_lines.append(":snow:")  # TO ADD
             file_lines.append("Sdepth0")  # TO ADD

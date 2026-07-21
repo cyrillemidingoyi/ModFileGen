@@ -8,13 +8,16 @@ class SticsNewTravailConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None):
         file_name = "new_travail.usm"
         fileContent = ""
         ST = directory_path.split(os.sep)
         fetchAllQuery = """SELECT SimUnitList.idsim, SimUnitList.idPoint as idPoint, SimUnitList.StartYear,SimUnitList.StartDay,SimUnitList.EndDay,SimUnitList.Endyear, SimUnitList.idsoil, SimUnitList.idMangt, SimUnitList.idIni, Coordinates.LatitudeDD, CropManagement.sowingdate,
         ListCultivars.SpeciesName FROM InitialConditions INNER JOIN ((ListCultivars INNER JOIN CropManagement ON ListCultivars.IdCultivar = CropManagement.Idcultivar) INNER JOIN (Coordinates INNER
-        Join SimUnitList ON Coordinates.idPoint = SimUnitList.idPoint) ON CropManagement.idMangt = SimUnitList.idMangt) ON InitialConditions.idIni = SimUnitList.idIni Where idsim = '%s';"""%(ST[-3])
+        Join SimUnitList ON Coordinates.idPoint = SimUnitList.idPoint) ON CropManagement.idMangt = SimUnitList.idMangt) ON InitialConditions.idIni = SimUnitList.idIni Where idsim = '%s'"""%(ST[-3])
+        if season_order is not None:
+            fetchAllQuery += " AND CropManagement.SeasonOrder = %d" % int(season_order)
+        fetchAllQuery += " ORDER BY CropManagement.PlantOrder;"
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
         T = "Select  Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'sticsv11') And ([Table] = 'new_travail'));"
         DT = pd.read_sql_query(T, ModelDictionary_Connection)
@@ -61,7 +64,12 @@ class SticsNewTravailConverter(Converter):
         fileContent += ":fclim1" + "\n"
         fileContent += "cli" + rows[0]["idPoint"] + "j." + str(rows[0]["StartYear"]) + "\n"
         fileContent += ":fclim2" + "\n"
-        fileContent += "cli" + rows[0]["idPoint"] + "j." + str(rows[0]["StartYear"] + 1) + "\n"
+        second_climate_year = (
+            rows[0]["StartYear"]
+            if rows[0]["StartYear"] == rows[0]["EndYear"]
+            else rows[0]["StartYear"] + 1
+        )
+        fileContent += "cli" + rows[0]["idPoint"] + "j." + str(second_climate_year) + "\n"
         fileContent += ":nbans" + "\n"
         
         if rows[0]["StartYear"] != rows[0]["EndYear"]:

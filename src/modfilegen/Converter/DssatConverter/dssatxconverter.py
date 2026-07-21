@@ -496,6 +496,7 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
     dataTable = pd.read_sql_query(fetchAllQuery, MI_Connection)
     fileContent = ""
     fileContent += siteColumnsHeader + "\n"
+    has_nh4initf = "NH4initf" in dataTable.columns
     if dataTable["SoilOption"].values[0].lower() == "simple":
         for i in range(2):
             rw = DT[DT["Champ"] == "LNIC"]
@@ -508,7 +509,11 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             fileContent += v_fmt_init["SH2O"].format((dataTable["Soil.Wwp"].values[0] / 100) + dataTable["WStockinit"].values[0] * (dataTable["Soil.Wfc"].values[0] - dataTable["Soil.Wwp"].values[0]) / 10000)
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
-            fileContent += v_fmt_init["SNH4"].format(float(Dv))
+            # fileContent.Append(FormatNumber(10 * dataTable.Rows(0).Item("NH4init") / (dataTable.Rows(0).Item("soil.bd") * dataTable.Rows(0).Item("SoilTotalDepth")), 2).ToString.PadLeft(5))
+            if has_nh4initf and pd.notna(dataTable["NH4initf"].values[0]):
+                fileContent += v_fmt_init["SNH4"].format(10 * dataTable["NH4initf"].values[0] / (dataTable["soil.bd"].values[0] * dataTable["SoilTotalDepth"].values[0]))
+            else:
+                fileContent += v_fmt_init["SNH4"].format(float(Dv))
             fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[0] / (dataTable["soil.bd"].values[0] * dataTable["SoilTotalDepth"].values[0]))
             fileContent += "\n"
     else:
@@ -520,7 +525,10 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             fileContent += v_fmt_init["SH2O"].format((dataTable["SoilLayers.Wwp"].values[i] / 100 + dataTable["WStockinit"].values[i] * (dataTable["SoilLayers.Wfc"].values[i] - dataTable["SoilLayers.Wwp"].values[i]) / 10000))
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
-            fileContent += v_fmt_init["SNH4"].format(float(Dv))
+            if has_nh4initf and pd.notna(dataTable["NH4initf"].values[i]):
+                fileContent += v_fmt_init["SNH4"].format(10 * dataTable["NH4initf"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilTotalDepth"].values[i]))
+            else:
+                fileContent += v_fmt_init["SNH4"].format(float(Dv))
             fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilTotalDepth"].values[i]), ".2f").rjust(5)
             fileContent += "\n"
     return fileContent
@@ -1032,9 +1040,9 @@ def writeBlockGeneral(dssat_tableName, dssat_tableId, idSim, modelDictionary_Con
     rw = DT[DT["Champ"] == "TITSIM"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_simulation["SNAME"].format(Dv.strip())
-    rw = DT[DT["Champ"] == "CROP_MODE"]
-    Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["SMODEL"].format(Dv.strip()) + "\n"
+    #rw = DT[DT["Champ"] == "CROP_MODE"]
+    #Dv = rw["dv"].values[0]
+    #fileContent += v_fmt_simulation["SMODEL"].format(Dv.strip()) + "\n"
     
     return fileContent
 

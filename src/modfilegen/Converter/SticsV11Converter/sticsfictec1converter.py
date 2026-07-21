@@ -8,7 +8,7 @@ class SticsFictec1Converter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None, date_offset=0):
         file_name = "fictec1.txt"
         file_name2 = "fictec2.txt"
         fileContent = ""
@@ -16,8 +16,12 @@ class SticsFictec1Converter(Converter):
              
         fetchAllQuery = """SELECT SimUnitList.idsim, SimUnitList.idMangt, Soil.SoilTotalDepth, ListCultivars.idcultivarStics, CropManagement.sdens,
         CropManagement.sowingdate, CropManagement.SoilTillPolicyCode FROM Soil INNER JOIN (ListCultivars INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt)
-        ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)  where idSim= '%s' ;"""%(ST[-3])
+        ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)  where idSim= '%s'"""%(ST[-3])
+        season_filter = "" if season_order is None else " AND CropManagement.SeasonOrder = %d" % int(season_order)
+        fetchAllQuery += season_filter + " ORDER BY CropManagement.PlantOrder;"
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
+        if date_offset:
+            DA["sowingdate"] = DA["sowingdate"] + int(date_offset)
         rows = DA.to_dict(orient='records')
         rw = rows[0]
 
@@ -34,15 +38,18 @@ class SticsFictec1Converter(Converter):
                 OrganicFOperations.NFerti, OrganicFOperations.Qmanure, OrganicFOperations.TypeResidues, ListResidues.idresidueStics, CropManagement.SoilTillPolicyCode 
                 FROM ListResidues INNER JOIN ((OrganicFertilizationPolicy INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt) 
                 ON OrganicFertilizationPolicy.OFertiPolicyCode = CropManagement.OFertiPolicyCode) INNER JOIN OrganicFOperations ON OrganicFertilizationPolicy.OFertiPolicyCode
-                = OrganicFOperations.OFertiPolicyCode) ON ListResidues.TypeResidues = OrganicFOperations.TypeResidues where idSim='%s' and CropManagement.PlantOrder=1 Order by OFNumber ;"""%(ST[-3])
+                = OrganicFOperations.OFertiPolicyCode) ON ListResidues.TypeResidues = OrganicFOperations.TypeResidues where idSim='%s' and CropManagement.PlantOrder=1"""%(ST[-3])
+        fetchallquery2 += season_filter + " Order by OFNumber;"
 
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)   
+        if date_offset and not DS2.empty:
+            DS2["sowingdate"] = DS2["sowingdate"] + int(date_offset)
         rows2 = DS2.to_dict(orient='records')
         Adp = pd.read_sql_query(Sql, master_input_connection)
         dataTill = Adp.to_dict(orient='records')
             
         fileContent += "nbinterventions\n"
-        if rows2[0]["idresidueStics"] is None:
+        if not rows2 or rows2[0]["idresidueStics"] is None:
             fileContent += "0\n"
         else:
             fileContent += str(len(rows2)) + "\n"
@@ -123,9 +130,12 @@ class SticsFictec1Converter(Converter):
         fetchallquery3 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti
             FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
             INNER JOIN (CropManagement INNER JOIN SimUnitList On CropManagement.idMangt = SimUnitList.idMangt) On InorganicFertilizationPolicy.InorgFertiPolicyCode =
-            CropManagement.InoFertiPolicyCode where idSim='%s' and CropManagement.PlantOrder = 1;"""%(ST[-3])
+            CropManagement.InoFertiPolicyCode where idSim='%s' and CropManagement.PlantOrder = 1"""%(ST[-3])
+        fetchallquery3 += season_filter + ";"
 
         DS2 = pd.read_sql_query(fetchallquery3, master_input_connection)            
+        if date_offset and not DS2.empty:
+            DS2["sowingdate"] = DS2["sowingdate"] + int(date_offset)
         fileContent += "nbinterventions\n"
         fileContent += format(DS2.shape[0], ".0f") + "\n"
         if DS2.shape[0] > 0:
@@ -240,7 +250,8 @@ class SticsFictec1Converter(Converter):
         OrganicFOperations.NFerti, OrganicFOperations.Qmanure, OrganicFOperations.TypeResidues, ListResidues.idresidueStics, CropManagement.SoilTillPolicyCode 
         FROM ListResidues INNER JOIN ((OrganicFertilizationPolicy INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt) 
         ON OrganicFertilizationPolicy.OFertiPolicyCode = CropManagement.OFertiPolicyCode) INNER JOIN OrganicFOperations ON OrganicFertilizationPolicy.OFertiPolicyCode
-        = OrganicFOperations.OFertiPolicyCode) ON ListResidues.TypeResidues = OrganicFOperations.TypeResidues where idSim='%s' and CropManagement.PlantOrder=2 Order by OFNumber ;"""%(ST[-3])
+        = OrganicFOperations.OFertiPolicyCode) ON ListResidues.TypeResidues = OrganicFOperations.TypeResidues where idSim='%s' and CropManagement.PlantOrder=2"""%(ST[-3])
+        fetchallquery2 += season_filter + " Order by OFNumber;"
 
         fileContent = ""
         rw = rows[1]
@@ -248,12 +259,14 @@ class SticsFictec1Converter(Converter):
                 FROM SoilTillPolicy INNER JOIN SoilTillageOperations ON SoilTillPolicy.SoilTillPolicyCode = SoilTillageOperations.SoilTillPolicyCode
                 where SoilTillPolicy.SoilTillPolicyCode= '%s';"""%(rw["SoilTillPolicyCode"])
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)   
+        if date_offset and not DS2.empty:
+            DS2["sowingdate"] = DS2["sowingdate"] + int(date_offset)
         rows2 = DS2.to_dict(orient='records')
         Adp = pd.read_sql_query(Sql, master_input_connection)
         dataTill = Adp.to_dict(orient='records')
                 
         fileContent += "nbinterventions\n"
-        if rows2[0]["idresidueStics"] is None:
+        if not rows2 or rows2[0]["idresidueStics"] is None:
             fileContent += "0\n"
         else:
             fileContent += str(len(rows2)) + "\n"
@@ -335,9 +348,12 @@ class SticsFictec1Converter(Converter):
         fetchallquery3 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti
                 FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
                 INNER JOIN (CropManagement INNER JOIN SimUnitList On CropManagement.idMangt = SimUnitList.idMangt) On InorganicFertilizationPolicy.InorgFertiPolicyCode =
-                CropManagement.InoFertiPolicyCode where idSim='%s' and CropManagement.PlantOrder = 2;"""%(ST[-3])
+                CropManagement.InoFertiPolicyCode where idSim='%s' and CropManagement.PlantOrder = 2"""%(ST[-3])
+        fetchallquery3 += season_filter + ";"
 
         DS2 = pd.read_sql_query(fetchallquery3, master_input_connection)            
+        if date_offset and not DS2.empty:
+            DS2["sowingdate"] = DS2["sowingdate"] + int(date_offset)
         fileContent += "nbinterventions\n"
         fileContent += format(DS2.shape[0], ".0f") + "\n"
         if DS2.shape[0] > 0:

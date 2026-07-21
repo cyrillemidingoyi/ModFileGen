@@ -7,7 +7,7 @@ class SticsStationConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, rap, var, prof, usmdir):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, rap, var, prof, usmdir, season_order=None):
         file_name = "station.txt"
         fileContent = ""
         ST = directory_path.split(os.sep)
@@ -16,6 +16,14 @@ class SticsStationConverter(Converter):
         fetchAllQuery = """SELECT SimUnitList.idsim, Coordinates.altitude, Coordinates.latitudeDD FROM Coordinates INNER JOIN SimUnitList ON Coordinates.idPoint = SimUnitList.idPoint Where idsim ='%s';"""%(ST[-3])
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
         rows = DA.to_dict(orient='records')
+        
+        sql = """SELECT Max(CropManagement.PlantOrder) AS MaxDePlantOrder FROM CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt WHERE SimUnitList.idsim = '%s'"""%(ST[-3])
+        if season_order is not None:
+            sql += " AND CropManagement.SeasonOrder = %d" % int(season_order)
+        DA2 = pd.read_sql_query(sql, master_input_connection)
+        rows2 = DA2.to_dict(orient='records')
+        nbplantes = rows2[0]["MaxDePlantOrder"] or 1
+            
         for row in rows:
             fileContent += self.FormatSticsData(DT, "zr")
             fileContent += self.FormatSticsData(DT, "NH3ref")
@@ -25,7 +33,9 @@ class SticsStationConverter(Converter):
 
             fileContent += self.FormatSticsData(DT, "patm")
             fileContent += self.FormatSticsData(DT, "aclim", 6)
-            fileContent += self.FormatSticsData(DT, "codeetp")
+            if nbplantes > 1:
+                fileContent += "codeetp\n3\n"
+            else: fileContent += self.FormatSticsData(DT, "codeetp")
             fileContent += self.FormatSticsData(DT, "alphapt")
             fileContent += self.FormatSticsData(DT, "codeclichange")
             fileContent += self.FormatSticsData(DT, "codaltitude")

@@ -19,7 +19,7 @@ if [ -f "Summary.OUT" ]; then
 fi
 
 if [ "$dailyoutput" -eq 1 ]; then
-    for output_file in ET.out PlantGro.out PlantN.out SoilOrg.out SoilWat.Out Weather.out; do
+    for output_file in ET.OUT PlantGro.OUT PlantN.OUT SoilOrg.OUT SoilWat.OUT Weather.OUT; do
         if [ -f "$output_file" ]; then
             source_name="${output_file%.*}"
             cp -- "$output_file" "$input_dir/${source_name}_${base}.out"
