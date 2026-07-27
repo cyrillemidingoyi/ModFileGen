@@ -47,7 +47,6 @@ REQUIRED_CROP_COLUMNS = {
     "idMangt",
     "SeasonOrder",
     "PlantOrder",
-    "SowingYearOffset",
     "sowingdate",
     "DHarvest",
 }
@@ -80,7 +79,8 @@ def _table_columns(connection, table):
 
 def fetch_rotation_seasons(connection, simulation):
     """Return validated seasons for one long-running SimUnitList row."""
-    missing = REQUIRED_CROP_COLUMNS - _table_columns(connection, "CropManagement")
+    crop_columns = _table_columns(connection, "CropManagement")
+    missing = REQUIRED_CROP_COLUMNS - crop_columns
     if missing:
         raise ValueError(
             "CropManagement is missing successive-simulation columns: "
@@ -101,7 +101,18 @@ def fetch_rotation_seasons(connection, simulation):
     if dataframe.empty:
         raise ValueError(f"No CropManagement rows for idMangt={simulation['idMangt']}")
 
-    for column in ("SeasonOrder", "PlantOrder", "SowingYearOffset", "sowingdate", "DHarvest"):
+    offset_column = next(
+        (name for name in ("SeasonYearOffset", "SowingYearOffset") if name in crop_columns),
+        None,
+    )
+    if offset_column is None:
+        raise ValueError(
+            "CropManagement is missing SeasonYearOffset (or legacy SowingYearOffset)"
+        )
+    if offset_column != "SeasonYearOffset":
+        dataframe["SeasonYearOffset"] = dataframe[offset_column]
+
+    for column in ("SeasonOrder", "PlantOrder", "SeasonYearOffset", "sowingdate", "DHarvest"):
         dataframe[column] = pd.to_numeric(dataframe[column], errors="raise").astype(int)
 
     orders = sorted(dataframe["SeasonOrder"].unique().tolist())
@@ -122,10 +133,10 @@ def fetch_rotation_seasons(connection, simulation):
                 f"found {plant_orders}"
             )
 
-        year_offsets = plants_df["SowingYearOffset"].unique().tolist()
+        year_offsets = plants_df["SeasonYearOffset"].unique().tolist()
         if len(year_offsets) != 1:
             raise ValueError(
-                f"All plants in season {season_order} must share SowingYearOffset"
+                f"All plants in season {season_order} must share SeasonYearOffset"
             )
 
         sowing_year = int(simulation["StartYear"]) + int(year_offsets[0])
@@ -154,7 +165,7 @@ def fetch_rotation_seasons(connection, simulation):
                 "SeasonOrder": int(season_order),
                 "StartDate": season_start,
                 "EndDate": season_end,
-                "SowingYearOffset": int(year_offsets[0]),
+                "SeasonYearOffset": int(year_offsets[0]),
                 "IsMixedCrop": len(plants) > 1,
                 "Plants": plants,
             }
@@ -171,6 +182,15 @@ def build_season_row(simulation, season):
     row["StartYear"], row["StartDay"] = year_day(season["StartDate"])
     row["EndYear"], row["EndDay"] = year_day(season["EndDate"])
     return row
+
+
+def season_fictec_date_offset(row, season):
+    """Offset management dates from the start year of this seasonal STICS run."""
+    sowing_year = int(season["Plants"][0]["SowingDate"].year)
+    season_start_year = int(row["StartYear"])
+    return sticsfictec1converter._season_year_offset_days(
+        season_start_year, sowing_year - season_start_year
+    )
 
 
 def set_usm_parameter(usm_file, parameter, value):
@@ -253,12 +273,13 @@ def load_static_stics_files(package):
     return tuple((parameters / name).read_text() for name in ("rap.mod", "var.mod", "prof.mod"))
 
 
-def create_context(mi, md, directory_path, temp_dir, pltfolder, package):
+def create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt):
     rap, var, prof = load_static_stics_files(package)
     return {
         "directory_path": directory_path,
         "temp_dir": temp_dir,
         "pltfolder": pltfolder,
+        "dt": dt,
         "rap": rap,
         "var": var,
         "prof": prof,
@@ -278,6 +299,10 @@ def generate_season_inputs(simulation, season, context):
         context["directory_path"], str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"])
     )
     season_order = season["SeasonOrder"]
+    fictec_date_offset = season_fictec_date_offset(row, season)
+    season_end_day = stics_datefin(
+        row["StartYear"], row["EndYear"], row["EndDay"]
+    )
 
     write_file(str(usmdir), "tempoparv6.sti", context["tempoparv6"])
     sticstempoparconverter.SticsTempoparConverter().export(
@@ -296,7 +321,7 @@ def generate_season_inputs(simulation, season, context):
     )
     sticsficiniconverter.SticsFicIniConverter().export(
         sim_path, context["dictionary"], context["master"], str(usmdir),
-        season_order=season_order,
+        season_order=season_order, dt=context["dt"],
     )
     sticsclimatconverter.SticsClimatConverter().export(
         sim_path,
@@ -308,11 +333,8 @@ def generate_season_inputs(simulation, season, context):
     )
     sticsfictec1converter.SticsFictec1Converter().export(
         sim_path, context["dictionary"], context["master"], str(usmdir),
-        season_order=season_order,
-        date_offset=(
-            date(season["Plants"][0]["SowingDate"].year, 1, 1)
-            - date(row["StartYear"], 1, 1)
-        ).days,
+        season_order=season_order, date_offset=fictec_date_offset,
+        simulation_end_day=season_end_day,
     )
     sticsficplt1converter.SticsFicplt1Converter().export(
         sim_path, context["master"], context["pltfolder"], str(usmdir),
@@ -369,7 +391,7 @@ def process_simulation(
     simulation, mi, md, directory_path, temp_dir, pltfolder, package, dt,
     dailyoutput=0,
 ):
-    context = create_context(mi, md, directory_path, temp_dir, pltfolder, package)
+    context = create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt)
     usm_dirs = []
     dataframes = []
     daily_dataframes = []

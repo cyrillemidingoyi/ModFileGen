@@ -45,17 +45,10 @@ def remove_comma(f):
         raise
 
 def create_df_summary(f, dt, idsim, plant_role=""):
-    #d_name = os.path.dirname(f).split(os.path.sep)[-1]
-    #d_name = Path(f).stem[len("mod_rapport_"):]
     remove_comma(f)
     if dt == 1: c = get_coord(idsim)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
-    # STICS may leave repeated report headers when a working directory is reused.
-    # Keep only actual result rows so rerunning the same idsim remains idempotent.
-    numeric_ansemis = pd.to_numeric(df["ansemis"], errors="coerce")
-    df = df.loc[numeric_ansemis.notna()].copy()
-    df["ansemis"] = numeric_ansemis.loc[numeric_ansemis.notna()]
-    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp", "cep2": "Transp"})
+    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", idsim)
     df.insert(2, "Texte", plant_role)
@@ -954,12 +947,13 @@ def process_chunk(*args):
         try:
             # Tempoparv6
             Path(usmdir).mkdir(parents=True, exist_ok=True)
-            for report_name in (
-                "mod_rapport.sti", "mod_rapportA.sti", "mod_rapportP.sti"
-            ):
-                report_file = Path(usmdir) / report_name
-                if report_file.exists():
-                    report_file.unlink()
+            if dt == 0:
+                for report_name in (
+                    "mod_rapport.sti", "mod_rapportA.sti", "mod_rapportP.sti"
+                ):
+                    report_file = Path(usmdir) / report_name
+                    if report_file.exists():
+                        report_file.unlink()
             if dailyoutput == 1:
                 for daily_file in Path(usmdir).glob("mod_s*.sti"):
                     daily_file.unlink()
@@ -1004,14 +998,18 @@ def process_chunk(*args):
             iniid =  ".".join([str(row["idsoil"]), str(row["idIni"])])    
             if iniid not in initable:            
                 ficiniconverter = sticsficiniconverter.SticsFicIniConverter()
-                r = ficiniconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+                r = ficiniconverter.export(
+                    simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir, dt=dt
+                )
                 initable[iniid] = r
                 del ficiniconverter  # Free converter
             else:
                 write_file(usmdir, "ficini.txt", initable[iniid])
             
             # Climat
-            climid =  ".".join([str(row["idPoint"]), str(row["StartYear"])])
+            climid = ".".join([
+                str(row["idPoint"]), str(row["StartYear"]), str(row["EndYear"])
+            ])
             if climid not in weathertable:
                 climatconverter = sticsclimatconverter.SticsClimatConverter()
                 r = climatconverter.export(
@@ -1028,7 +1026,9 @@ def process_chunk(*args):
                 write_file(usmdir, "climat.txt", weathertable[climid])
             
             # Fictec1
-            tecid =  ".".join([str(row["idMangt"]), str(row["idsoil"])]) 
+            tecid = ".".join([
+                str(row["idMangt"]), str(row["idsoil"]), str(row["StartYear"])
+            ])
             if tecid not in tectable:  
                 fictec1converter = sticsfictec1converter.SticsFictec1Converter()
                 r = fictec1converter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
@@ -1054,15 +1054,12 @@ def process_chunk(*args):
                 )
             except subprocess.TimeoutExpired as e:
                 print(f"⏰ STICS run timed out for {usmdir}. Killing...")
-                # Forcefully terminate the process if it hangs
-                #result.kill()  # Python 3.9+
                 raise e
 
             except subprocess.CalledProcessError as e:
                 print(f"❌ STICS run failed for {usmdir} with return code {e.returncode}")
                 print("STDOUT:\n", e.stdout)
                 print("STDERR:\n", e.stderr)
-                #result.kill()  # Python 3.9+
                 raise e  # skip to next simulation
             except Exception as e:
                 print(f"⚠️ Unexpected error for {usmdir}: {str(e)}")
@@ -1766,4 +1763,10 @@ def main():
     return result_path
     
 if __name__ == "__main__":
+    import gc
+    import psutil
+    from glob import glob
+    import uuid
+    start = time()
     main()
+    print(f"STICS total time: {time()-start:.2f}s", flush=True)

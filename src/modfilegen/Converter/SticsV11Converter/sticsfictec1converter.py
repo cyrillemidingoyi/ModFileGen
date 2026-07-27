@@ -4,22 +4,84 @@ import os
 import pandas as pd
 import traceback
 
+
+def _is_leap_year(year):
+    year = int(year)
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def _season_year_offset_days(start_year, season_year_offset):
+    start_year = int(start_year)
+    season_year_offset = int(season_year_offset)
+    if season_year_offset < 0:
+        return -sum(
+            366 if _is_leap_year(year) else 365
+            for year in range(start_year + season_year_offset, start_year)
+        )
+    return sum(
+        366 if _is_leap_year(year) else 365
+        for year in range(start_year, start_year + season_year_offset)
+    )
+
+
+def _stics_date(cumulative_day, delay=0):
+    """Return a date in the coordinate system of the current STICS season."""
+    return int(cumulative_day) + int(delay)
+
+
+def _simulation_end_day(start_year, end_year, end_day):
+    end_date = int(end_day) + _season_year_offset_days(
+        start_year, int(end_year) - int(start_year)
+    )
+    if not 1 <= end_date <= 731:
+        raise ValueError(
+            f"STICS datefin must be between 1 and 731; calculated {end_date}"
+        )
+    return end_date
+
+
+def _irecbutoir(simulation_end_day):
+    """Use the effective end of the current STICS run as harvest deadline."""
+    simulation_end_day = int(simulation_end_day)
+    if not 1 <= simulation_end_day <= 731:
+        raise ValueError(
+            f"STICS irecbutoir must be between 1 and 731; got {simulation_end_day}"
+        )
+    return simulation_end_day
+
+
 class SticsFictec1Converter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None, date_offset=0):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None, date_offset=None, simulation_end_day=None):
         file_name = "fictec1.txt"
         file_name2 = "fictec2.txt"
         fileContent = ""
         ST = directory_path.split(os.sep)
              
-        fetchAllQuery = """SELECT SimUnitList.idsim, SimUnitList.idMangt, Soil.SoilTotalDepth, ListCultivars.idcultivarStics, CropManagement.sdens,
-        CropManagement.sowingdate, CropManagement.SoilTillPolicyCode FROM Soil INNER JOIN (ListCultivars INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt)
+        fetchAllQuery = """SELECT SimUnitList.idsim, SimUnitList.idMangt, SimUnitList.StartYear, SimUnitList.EndYear, SimUnitList.EndDay, Soil.SoilTotalDepth, ListCultivars.idcultivarStics, CropManagement.*
+        FROM Soil INNER JOIN (ListCultivars INNER JOIN (CropManagement INNER JOIN SimUnitList ON CropManagement.idMangt = SimUnitList.idMangt)
         ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)  where idSim= '%s'"""%(ST[-3])
         season_filter = "" if season_order is None else " AND CropManagement.SeasonOrder = %d" % int(season_order)
         fetchAllQuery += season_filter + " ORDER BY CropManagement.PlantOrder;"
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
+        if DA.empty:
+            raise ValueError(f"No CropManagement rows found for simulation {ST[-3]}")
+        if simulation_end_day is None:
+            simulation_end_day = _simulation_end_day(
+                DA.iloc[0]["StartYear"], DA.iloc[0]["EndYear"], DA.iloc[0]["EndDay"]
+            )
+        else:
+            simulation_end_day = _irecbutoir(simulation_end_day)
+        if date_offset is None:
+            offset_column = next(
+                (name for name in ("SeasonYearOffset", "SowingYearOffset") if name in DA.columns),
+                None,
+            )
+            offset_value = 0 if offset_column is None else DA.iloc[0][offset_column]
+            season_year_offset = 0 if pd.isna(offset_value) else int(offset_value)
+            date_offset = _season_year_offset_days(DA.iloc[0]["StartYear"], season_year_offset)
         if date_offset:
             DA["sowingdate"] = DA["sowingdate"] + int(date_offset)
         rows = DA.to_dict(orient='records')
@@ -56,7 +118,7 @@ class SticsFictec1Converter(Converter):
             if len(rows2) != 0:
                 for i in range(len(rows2)):
                     fileContent += "julres coderes qres Crespc CsurNres Nminres eaures" + "\n"
-                    fileContent += str(int(rows2[i]["sowingdate"]) + int(rows2[i]["Dferti"])) + " "
+                    fileContent += str(_stics_date(rows2[i]["sowingdate"], rows2[i]["Dferti"])) + " "
                     fileContent += str(rows2[i]["idresidueStics"]) + " "
                     fileContent += str(int(rows2[i]["Qmanure"])/1000) + " "
                     fileContent += str(rows2[i]["CNferti"] * rows2[i]["NFerti"]) + " "
@@ -71,12 +133,12 @@ class SticsFictec1Converter(Converter):
         if dataTill[0]["NumTillOperations"] > 0:
             for i in range(len(dataTill)):
                 fileContent += "jultrav profres proftrav \n"
-                fileContent += format(rw["sowingdate"] + dataTill[i]["DSTill"], ".0f") + " "
+                fileContent += str(_stics_date(rw["sowingdate"], dataTill[i]["DSTill"])) + " "
                 fileContent += format(dataTill[i]["DepthResUp"], ".0f") + " "
                 fileContent += format(dataTill[i]["DepthResLow"], ".0f") + "\n"
 
         fileContent += "iplt0\n"
-        fileContent += format(rw["sowingdate"], ".0f") + "\n"
+        fileContent += str(_stics_date(rw["sowingdate"])) + "\n"
         fileContent += self.format_item( DT, "profsem")
         fileContent += "densitesem\n"
         fileContent += str(format(rw["sdens"], ".2f"))+ "\n"
@@ -141,7 +203,7 @@ class SticsFictec1Converter(Converter):
         if DS2.shape[0] > 0:
             for i in range(DS2.shape[0]):
                 fileContent += "julapN_or_sum_upvt absolute_value/% engrais \n"
-                fileContent += str(int(DS2.iloc[i]["sowingdate"] + DS2.iloc[i]["Dferti"])) + " "
+                fileContent += str(_stics_date(DS2.iloc[i]["sowingdate"], DS2.iloc[i]["Dferti"])) + " "
                 fileContent += str(DS2.iloc[i]["N"]) + " "
                 rw_engrais = DT[DT["Champ"] == "engrais"]
                 data = rw_engrais["dv"].values[0]
@@ -149,7 +211,7 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "codlocferti")
         fileContent += self.format_item(DT, "locferti")
         fileContent += "irecbutoir\n"   # to here
-        fileContent += format(rw["sowingdate"] + 250, ".0f") + "\n"
+        fileContent += str(_irecbutoir(simulation_end_day)) + "\n"
         fileContent += self.format_item(DT, "ressuite")
         fileContent += "code_autoressuite\n"   # do not see in the documentation
         fileContent += "2\n"   # do not see in the documentation
@@ -273,7 +335,7 @@ class SticsFictec1Converter(Converter):
             if len(rows2) != 0:
                 for i in range(len(rows2)):
                     fileContent += "julres coderes qres Crespc CsurNres Nminres eaures" + "\n"
-                    fileContent += str(int(rows2[i]["sowingdate"]) + int(rows2[i]["Dferti"])) + " "
+                    fileContent += str(_stics_date(rows2[i]["sowingdate"], rows2[i]["Dferti"])) + " "
                     fileContent += str(rows2[i]["idresidueStics"]) + " "
                     fileContent += str(int(rows2[i]["Qmanure"])/1000) + " "
                     fileContent += str(rows2[i]["CNferti"] * rows2[i]["NFerti"]) + " "
@@ -288,12 +350,12 @@ class SticsFictec1Converter(Converter):
         if dataTill[0]["NumTillOperations"] > 0:
             for i in range(len(dataTill)):
                 fileContent += "jultrav profres proftrav \n"
-                fileContent += format(rw["sowingdate"] + dataTill[i]["DSTill"], ".0f") + " "
+                fileContent += str(_stics_date(rw["sowingdate"], dataTill[i]["DSTill"])) + " "
                 fileContent += format(dataTill[i]["DepthResUp"], ".0f") + " "
                 fileContent += format(dataTill[i]["DepthResLow"], ".0f") + "\n"
 
         fileContent += "iplt0\n"
-        fileContent += format(rw["sowingdate"], ".0f") + "\n"
+        fileContent += str(_stics_date(rw["sowingdate"])) + "\n"
         fileContent += self.format_item( DT, "profsem")
         fileContent += "densitesem\n"
         fileContent += str(format(rw["sdens"], ".2f"))+ "\n"
@@ -359,7 +421,7 @@ class SticsFictec1Converter(Converter):
         if DS2.shape[0] > 0:
             for i in range(DS2.shape[0]):
                 fileContent += "julapN_or_sum_upvt absolute_value/% engrais \n"
-                fileContent += str(int(DS2.iloc[i]["sowingdate"] + DS2.iloc[i]["Dferti"])) + " "
+                fileContent += str(_stics_date(DS2.iloc[i]["sowingdate"], DS2.iloc[i]["Dferti"])) + " "
                 fileContent += str(DS2.iloc[i]["N"]) + " "
                 rw_engrais = DT[DT["Champ"] == "engrais"]
                 data = rw_engrais["dv"].values[0]
@@ -367,7 +429,7 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "codlocferti")
         fileContent += self.format_item(DT, "locferti")
         fileContent += "irecbutoir\n"   # to here
-        fileContent += format(rw["sowingdate"] + 250, ".0f") + "\n"
+        fileContent += str(_irecbutoir(simulation_end_day)) + "\n"
         fileContent += self.format_item(DT, "ressuite")
         fileContent += "code_autoressuite\n"   # do not see in the documentation
         fileContent += "2\n"   # do not see in the documentation

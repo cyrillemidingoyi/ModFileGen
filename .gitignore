@@ -24,6 +24,10 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+owner/
+data/
+.dist
+weather_test_output/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
