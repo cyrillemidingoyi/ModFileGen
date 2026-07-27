@@ -22,7 +22,6 @@ class SticsClimatConverter(Converter):
         ST = directory_path.split(os.sep)        
         Site = ST[-2]
         idsim = ST[-3]
-        Site = ST[-2]
         if start_year is None or end_year is None:
             simulation = master_input_connection.execute(
                 "SELECT StartYear, EndYear FROM SimUnitList WHERE idsim = ?",

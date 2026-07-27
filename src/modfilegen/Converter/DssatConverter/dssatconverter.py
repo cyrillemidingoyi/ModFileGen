@@ -61,7 +61,7 @@ def extract_corrected_doy(date_col, ys):
 
 
 def get_coord(d):
-    res = re.findall("([-]?\d+[.]?\d+)[_]", d)
+    res = re.findall(r"(-?\d+(?:\.\d+)?)_", d)
     lat = float(res[0])
     lon = float(res[1])
     year = int(float(res[2]))
@@ -480,7 +480,7 @@ def main():
     thirdyear = int(GlobalVariables["thirdyear"])
     tempDir = GlobalVariables.get("tempDir")
     dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
-    dssat_version = GlobalVariables.get("dssat", "v47")
+    dssat_version = GlobalVariables.get("dssat_version", "v47")
     if dssat_version not in dssatcultivarconverter.DSSAT_CULTIVAR_SUFFIXES:
         raise ValueError(
             f"Unsupported DSSAT version {dssat_version!r}; expected v47 or v48"
