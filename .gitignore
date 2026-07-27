@@ -26,6 +26,9 @@ wheels/
 *.egg
 owner/
 data/
+!/tests/data/
+/tests/data/*
+!/tests/data/MasterInput_bon_test.db
 .dist
 weather_test_output/
 tests/apsim/
