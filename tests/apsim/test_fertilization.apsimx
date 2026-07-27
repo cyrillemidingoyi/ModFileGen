@@ -1,0 +1,186 @@
+{
+  "$type": "Models.Core.Simulations, Models",
+  "Version": 174,
+  "Name": "Fertilization Schedule",
+  "ResourceName": null,
+  "Children": [
+    {
+      "$type": "Models.Core.Folder, Models",
+      "ShowInDocs": false,
+      "GraphsPerPage": 6,
+      "Name": "Management",
+      "ResourceName": null,
+      "Children": [
+        {
+          "$type": "Models.Manager, Models",
+          "CodeArray": [
+            "using Models.Soils;",
+            "using System;",
+            "using System.Linq;",
+            "using Models.Core;",
+            "using Models.PMF;",
+            "namespace Models",
+            "{",
+            "    [Serializable]",
+            "    public class Script : Model",
+            "    {",
+            "        [Link] Clock Clock;",
+            "        [Link] Fertiliser Fertiliser;",
+            "        ",
+            "        [Description(\"Crop to be fertilised\")]",
+            "        public IPlant Crop { get; set; }",
+            "",
+            "        [Description(\"Type of fertiliser to apply? \")] ",
+            "        public Fertiliser.Types FertiliserType { get; set; }",
+            "    ",
+            "        [Description(\"Amount of fertiliser to be applied (kg/ha)\")]",
+            "        public double Amount { get; set; }",
+            "        ",
+            "        [EventSubscribe(\"Sowing\")]",
+            "        private void OnSowing(object sender, EventArgs e)",
+            "        {",
+            "            Model crop = sender as Model;",
+            "            if (Crop != null && crop.Name.ToLower() == (Crop as IModel).Name.ToLower())",
+            "                Fertiliser.Apply(Amount: Amount, Type: FertiliserType);",
+            "        }",
+            "    }",
+            "}"
+          ],
+          "Parameters": [
+            {
+              "Key": "Crop",
+              "Value": "Cotton"
+            },
+            {
+              "Key": "FertiliserType",
+              "Value": "NO3N"
+            },
+            {
+              "Key": "Amount",
+              "Value": "50.0"
+            }
+          ],
+          "Name": "Fertilise Cotton at sowing",
+          "ResourceName": null,
+          "Children": [],
+          "Enabled": true,
+          "ReadOnly": false
+        },
+        {
+          "$type": "Models.Manager, Models",
+          "CodeArray": [
+            "using Models.Soils;",
+            "using System;",
+            "using System.Linq;",
+            "using Models.Core;",
+            "using Models.PMF;",
+            "namespace Models",
+            "{",
+            "    [Serializable]",
+            "    public class Script : Model",
+            "    {",
+            "        [Link] Clock Clock;",
+            "        [Link] Fertiliser Fertiliser;",
+            "        ",
+            "        [Description(\"Crop to be fertilised\")]",
+            "        public IPlant Crop { get; set; }",
+            "",
+            "        [Description(\"Type of fertiliser to apply? \")] ",
+            "        public Fertiliser.Types FertiliserType { get; set; }",
+            "    ",
+            "        [Description(\"Amount of fertiliser to be applied (kg/ha)\")]",
+            "        public double Amount { get; set; }",
+            "        ",
+            "        [EventSubscribe(\"Sowing\")]",
+            "        private void OnSowing(object sender, EventArgs e)",
+            "        {",
+            "            Model crop = sender as Model;",
+            "            if (Crop != null && crop.Name.ToLower() == (Crop as IModel).Name.ToLower())",
+            "                Fertiliser.Apply(Amount: Amount, Type: FertiliserType);",
+            "        }",
+            "    }",
+            "}"
+          ],
+          "Parameters": [
+            {
+              "Key": "Crop",
+              "Value": NaN
+            },
+            {
+              "Key": "FertiliserType",
+              "Value": "UreaN"
+            },
+            {
+              "Key": "Amount",
+              "Value": "75.0"
+            }
+          ],
+          "Name": "Fertilise nan at sowing",
+          "ResourceName": null,
+          "Children": [],
+          "Enabled": true,
+          "ReadOnly": false
+        },
+        {
+          "$type": "Models.Manager, Models",
+          "CodeArray": [
+            "using Models.Soils;",
+            "using System;",
+            "using System.Linq;",
+            "using Models.Core;",
+            "using Models.PMF;",
+            "namespace Models",
+            "{",
+            "    [Serializable]",
+            "    public class Script : Model",
+            "    {",
+            "        [Link] Clock Clock;",
+            "        [Link] Fertiliser Fertiliser;",
+            "        ",
+            "        [Description(\"Crop to be fertilised\")]",
+            "        public IPlant Crop { get; set; }",
+            "",
+            "        [Description(\"Type of fertiliser to apply? \")] ",
+            "        public Fertiliser.Types FertiliserType { get; set; }",
+            "    ",
+            "        [Description(\"Amount of fertiliser to be applied (kg/ha)\")]",
+            "        public double Amount { get; set; }",
+            "        ",
+            "        [EventSubscribe(\"Sowing\")]",
+            "        private void OnSowing(object sender, EventArgs e)",
+            "        {",
+            "            Model crop = sender as Model;",
+            "            if (Crop != null && crop.Name.ToLower() == (Crop as IModel).Name.ToLower())",
+            "                Fertiliser.Apply(Amount: Amount, Type: FertiliserType);",
+            "        }",
+            "    }",
+            "}"
+          ],
+          "Parameters": [
+            {
+              "Key": "Crop",
+              "Value": NaN
+            },
+            {
+              "Key": "FertiliserType",
+              "Value": "UreaN"
+            },
+            {
+              "Key": "Amount",
+              "Value": "75.0"
+            }
+          ],
+          "Name": "Fertilise nan at sowing",
+          "ResourceName": null,
+          "Children": [],
+          "Enabled": true,
+          "ReadOnly": false
+        }
+      ],
+      "Enabled": true,
+      "ReadOnly": false
+    }
+  ],
+  "Enabled": true,
+  "ReadOnly": false
+}

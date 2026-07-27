@@ -24,6 +24,19 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+owner/
+data/
+.dist
+weather_test_output/
+tests/apsim/
+tests/v9tov11/
+tests/ggcmi/
+tests/stics_successive/
+tests/stics_intercrop/
+tests/cyrille/
+tests/dssatv48/
+tests/test/
+
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

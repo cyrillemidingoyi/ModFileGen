@@ -1,0 +1,133 @@
+{
+  "$type": "Models.Core.Simulations, Models",
+  "Version": 174,
+  "Name": "Irrigation Management",
+  "ResourceName": null,
+  "Children": [
+    {
+      "$type": "Models.Core.Folder, Models",
+      "ShowInDocs": false,
+      "GraphsPerPage": 6,
+      "Name": "Management",
+      "ResourceName": null,
+      "Children": [
+        {
+          "$type": "Models.Manager, Models",
+          "CodeArray": [
+            "using Models.Soils;",
+            "using Models.PMF;",
+            "using Models.Core;",
+            "using System;",
+            "using System.Linq;",
+            "",
+            "namespace Models",
+            "{",
+            "    [Serializable]",
+            "    public class Script : Model",
+            "    {",
+            "        [Link] Clock Clock;",
+            "        [Link] Irrigation Irrigation;",
+            "        [Link] ISoilWater WaterBalance;",
+            "        ",
+            "        [Description(\"Crop\")]",
+            "        public IPlant Crop { get; set; }",
+            "        ",
+            "        [Description(\"Irrigation amount (mm)\")]",
+            "        public double Amount { get; set; }",
+            "        ",
+            "        [Description(\"Critical fraction of available water\")]",
+            "        public double CriticalFraction { get; set; }",
+            "        ",
+            "        [EventSubscribe(\"DoManagement\")]",
+            "        private void OnDoManagement(object sender, EventArgs e)",
+            "        {",
+            "            if (Crop.IsAlive)",
+            "            {",
+            "                double[] esw = WaterBalance.ESW;",
+            "                double[] paw = WaterBalance.PAW;",
+            "                double totalESW = esw.Sum();",
+            "                double totalPAW = paw.Sum();",
+            "                ",
+            "                if (totalPAW > 0 && totalESW / totalPAW < CriticalFraction)",
+            "                {",
+            "                    Irrigation.Apply(Amount);",
+            "                }",
+            "            }",
+            "        }",
+            "    }",
+            "}"
+          ],
+          "Parameters": [
+            {
+              "Key": "Crop",
+              "Value": "Cotton"
+            },
+            {
+              "Key": "Amount",
+              "Value": "30.0"
+            },
+            {
+              "Key": "CriticalFraction",
+              "Value": "0.5"
+            }
+          ],
+          "Name": "Auto irrigation for Cotton",
+          "ResourceName": null,
+          "Children": [],
+          "Enabled": true,
+          "ReadOnly": false
+        },
+        {
+          "$type": "Models.Manager, Models",
+          "CodeArray": [
+            "using Models.Core;",
+            "using System;",
+            "using APSIM.Shared.Utilities;",
+            "",
+            "namespace Models",
+            "{",
+            "    [Serializable]",
+            "    public class Script : Model",
+            "    {",
+            "        [Link] Clock Clock;",
+            "        [Link] Irrigation Irrigation;",
+            "        ",
+            "        [Description(\"Irrigation date (d-mmm)\")]",
+            "        public string IrrigDate { get; set; }",
+            "        ",
+            "        [Description(\"Irrigation amount (mm)\")]",
+            "        public double Amount { get; set; }",
+            "        ",
+            "        [EventSubscribe(\"DoManagement\")]",
+            "        private void OnDoManagement(object sender, EventArgs e)",
+            "        {",
+            "            if (DateUtilities.DatesEqual(IrrigDate, Clock.Today))",
+            "                Irrigation.Apply(Amount);",
+            "        }",
+            "    }",
+            "}"
+          ],
+          "Parameters": [
+            {
+              "Key": "IrrigDate",
+              "Value": "15-jan"
+            },
+            {
+              "Key": "Amount",
+              "Value": "50.0"
+            }
+          ],
+          "Name": "Irrigate on 15-jan",
+          "ResourceName": null,
+          "Children": [],
+          "Enabled": true,
+          "ReadOnly": false
+        }
+      ],
+      "Enabled": true,
+      "ReadOnly": false
+    }
+  ],
+  "Enabled": true,
+  "ReadOnly": false
+}

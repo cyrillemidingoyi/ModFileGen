@@ -1,0 +1,20 @@
+
+from modfilegen.version import __version__
+from modfilegen.utils.stics_cultivar_file import SticsCultivarFile
+
+# Global variables
+GlobalVariables = {"storeNumMinSimu" : 0,
+                      "storeNumMaxSimu" : 0,
+                      "storeKeyDataN" : 0,  #'variable containing value of column 'N' to read 
+                                            #' Public RepSource As String = "D:\donneesFA\modelisation\Arise\dataMillArise\AppliDatamill"
+                     "dbMasterInput" : "",
+                    "dbModelsDictionary" : "",
+                    "dbCelsius" : "",
+                    "dt" : 1,
+                    "ori_MI" : "",
+                    "parts": 1,
+                    "tempDir": "",
+                    "package": "",
+                    "thirdyear": 0,
+                    "dailyoutput": 0
+                     }

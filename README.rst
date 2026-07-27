@@ -106,6 +106,7 @@ Usage
     GlobalVariables["pltfolder"] = os.path.join(directory_path, "cultivars", "dssat")
     GlobalVariables["nthreads"] = 4  # Number of parallel threads
     GlobalVariables["dt"] = 1  # Delete temporary files (0=keep, 1=delete)
+    GlobalVariables["dssat"] = "v47"  # Supported versions: "v47" or "v48"
     GlobalVariables["parts"] = 1  # Number of parts for chunking
     
     # Run converter

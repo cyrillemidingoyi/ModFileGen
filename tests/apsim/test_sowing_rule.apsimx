@@ -1,0 +1,149 @@
+{
+  "$type": "Models.Core.Simulations, Models",
+  "Version": 174,
+  "Name": "Rule-Based Sowing",
+  "ResourceName": null,
+  "Children": [
+    {
+      "$type": "Models.Core.Folder, Models",
+      "ShowInDocs": false,
+      "GraphsPerPage": 6,
+      "Name": "Management",
+      "ResourceName": null,
+      "Children": [
+        {
+          "$type": "Models.Manager, Models",
+          "CodeArray": [
+            "using Models.Interfaces;",
+            "using APSIM.Shared.Utilities;",
+            "using Models.Utilities;",
+            "using Models.Soils;",
+            "using Models.PMF;",
+            "using Models.Core;",
+            "using System;",
+            "using System.Linq;",
+            "using Models.Climate;",
+            "",
+            "namespace Models",
+            "{",
+            "    [Serializable]",
+            "    public class Script : Model",
+            "    {",
+            "        [Link] private Clock Clock;",
+            "        [Link] private Fertiliser Fertiliser;",
+            "        [Link] private Summary Summary;",
+            "        [Link] private Soil Soil;",
+            "        private Accumulator accumulatedRain;",
+            "        [Link]",
+            "        private ISoilWater waterBalance;",
+            "        ",
+            "        [Description(\"Crop\")]",
+            "        public IPlant Crop { get; set; }",
+            "",
+            "        [Description(\"Start of sowing window (d-mmm)\")]",
+            "        public string StartDate { get; set; }",
+            "",
+            "        [Description(\"End of sowing window (d-mmm)\")]",
+            "        public string EndDate { get; set; }",
+            "",
+            "        [Description(\"Minimum extractable soil water for sowing (mm)\")]",
+            "        public double MinESW { get; set; }",
+            "",
+            "        [Description(\"Accumulated rainfall required for sowing (mm)\")]",
+            "        public double MinRain { get; set; }",
+            "",
+            "        [Description(\"Duration of rainfall accumulation (d)\")]",
+            "        public int RainDays { get; set; }",
+            "",
+            "        [Display(Type = DisplayType.CultivarName)]",
+            "        [Description(\"Cultivar to be sown\")]",
+            "        public string CultivarName { get; set; }",
+            "",
+            "        [Description(\"Sowing depth (mm)\")]",
+            "        public double SowingDepth { get; set; }",
+            "",
+            "        [Description(\"Row spacing (mm)\")]",
+            "        public double RowSpacing { get; set; }",
+            "",
+            "        [Description(\"Plant population (/m2)\")]",
+            "        public double Population { get; set; }",
+            "        ",
+            "        ",
+            "        [EventSubscribe(\"StartOfSimulation\")]",
+            "        private void OnSimulationCommencing(object sender, EventArgs e)",
+            "        {",
+            "            accumulatedRain = new Accumulator(this, \"[Weather].Rain\", RainDays);",
+            "        }",
+            "",
+            "        [EventSubscribe(\"DoManagement\")]",
+            "        private void OnDoManagement(object sender, EventArgs e)",
+            "        {",
+            "            accumulatedRain.Update();",
+            "            ",
+            "            if (DateUtilities.WithinDates(StartDate, Clock.Today, EndDate) &&",
+            "                !Crop.IsAlive &&",
+            "                MathUtilities.Sum(waterBalance.ESW) > MinESW &&",
+            "                accumulatedRain.Sum > MinRain)",
+            "            {",
+            "                Crop.Sow(population: Population, cultivar: CultivarName, depth: SowingDepth, rowSpacing: RowSpacing);    ",
+            "            }",
+            "        }",
+            "    }",
+            "}"
+          ],
+          "Parameters": [
+            {
+              "Key": "Crop",
+              "Value": "Maize"
+            },
+            {
+              "Key": "StartDate",
+              "Value": "1-nov"
+            },
+            {
+              "Key": "EndDate",
+              "Value": "31-dec"
+            },
+            {
+              "Key": "MinESW",
+              "Value": "100.0"
+            },
+            {
+              "Key": "MinRain",
+              "Value": "25.0"
+            },
+            {
+              "Key": "RainDays",
+              "Value": "7"
+            },
+            {
+              "Key": "CultivarName",
+              "Value": "Pioneer_3394"
+            },
+            {
+              "Key": "SowingDepth",
+              "Value": "40.0"
+            },
+            {
+              "Key": "RowSpacing",
+              "Value": "750.0"
+            },
+            {
+              "Key": "Population",
+              "Value": "8.0"
+            }
+          ],
+          "Name": "Sow Maize using a rule",
+          "ResourceName": null,
+          "Children": [],
+          "Enabled": true,
+          "ReadOnly": false
+        }
+      ],
+      "Enabled": true,
+      "ReadOnly": false
+    }
+  ],
+  "Enabled": true,
+  "ReadOnly": false
+}
