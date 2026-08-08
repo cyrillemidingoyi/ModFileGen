@@ -10,6 +10,16 @@ def is_leap_year(year):
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
+def format_dssat_weather_date(year, doy):
+    """Format a DSSAT weather date as YYDDD."""
+    year = int(year)
+    doy = int(doy)
+    maximum_doy = 366 if is_leap_year(year) else 365
+    if not 1 <= doy <= maximum_doy:
+        raise ValueError(f"Invalid day of year {doy} for {year}")
+    return f"{year % 100:02d}{doy:03d}"
+
+
 def rollover_weather_rows(rows, weather_year):
     copied_rows = []
     target_year = int(weather_year)
@@ -87,7 +97,7 @@ class DssatweatherConverter(Converter):
 
     def _append_weather_rows(self, content, rows):
         for row in rows:
-            content += f"{str(row['year'])[2:4]}{str(row['DOY']).rjust(3, '0'):>5}"[-5:]
+            content += format_dssat_weather_date(row["year"], row["DOY"])
             content += f"{row['srad']:6.1f}"
             content += f"{row['tmax']:6.1f}"
             content += f"{row['tmin']:6.1f}"

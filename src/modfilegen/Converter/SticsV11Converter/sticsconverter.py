@@ -13,7 +13,7 @@ from multiprocessing import Pool
 import pandas as pd
 from time import time
 import traceback
-from joblib import Parallel, delayed, parallel_backend  
+from joblib import Parallel, delayed  
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import sys
@@ -1763,10 +1763,6 @@ def main():
     return result_path
     
 if __name__ == "__main__":
-    import gc
-    import psutil
-    from glob import glob
-    import uuid
     start = time()
     main()
     print(f"STICS total time: {time()-start:.2f}s", flush=True)

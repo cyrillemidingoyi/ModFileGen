@@ -31,9 +31,16 @@ def run_stics():
 
 
 def run_dssat():
-    return import_module(
-        "modfilegen.Converter.DssatConverter.dssatconverter"
-    ).main()
+    mode = str(GlobalVariables.get("dssat_mode", "standard")).strip().lower()
+    modules = {
+        "standard": "modfilegen.Converter.DssatConverter.dssatconverter",
+        "successive": "modfilegen.Converter.DssatConverter.dssatsuccessiveconverter",
+    }
+    if mode not in modules:
+        raise ValueError(
+            "GlobalVariables['dssat_mode'] must be 'standard' or 'successive'"
+        )
+    return import_module(modules[mode]).main()
 
 
 def run_apsim():
