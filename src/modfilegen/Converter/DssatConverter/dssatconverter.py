@@ -283,7 +283,7 @@ def process_chunk(*args):
                 MasterInput_Connection,
                 usmdir,
                 crop,
-                dt,
+                dailyoutput,
                 dssat_version,
             )
             del xconverter  # Free converter

@@ -392,14 +392,24 @@ def successive_season_rows(simunit_row, managements):
     return seasons
 
 
-def season_connection(source_connection, simunit_row, management):
-    """Clone MasterInput and expose exactly one management to legacy writers."""
+def successive_group_connection(source_connection):
+    """Clone MasterInput once and retain a source copy of its managements."""
     connection = sqlite3.connect(":memory:")
     source_connection.backup(connection)
     connection.execute(
+        "CREATE TEMP TABLE SuccessiveCropManagement AS SELECT * FROM CropManagement"
+    )
+    return connection
+
+
+def configure_season_connection(connection, simunit_row, management):
+    """Expose one rotation to legacy writers in a reusable in-memory database."""
+    connection.execute("DELETE FROM CropManagement")
+    connection.execute(
         """
-        DELETE FROM CropManagement
-        WHERE idMangt <> ? OR SeasonOrder <> ? OR PlantOrder <> ?
+        INSERT INTO CropManagement
+        SELECT * FROM SuccessiveCropManagement
+        WHERE idMangt = ? AND SeasonOrder = ? AND PlantOrder = ?
         """,
         (
             management["idMangt"],
@@ -420,6 +430,12 @@ def season_connection(source_connection, simunit_row, management):
     )
     connection.commit()
     return connection
+
+
+def season_connection(source_connection, simunit_row, management):
+    """Backward-compatible one-season connection constructor."""
+    connection = successive_group_connection(source_connection)
+    return configure_season_connection(connection, simunit_row, management)
 
 
 def treatment_line(rotation, model_dictionary_connection, master_input_connection, sections):
@@ -581,6 +597,7 @@ def generate_rotation_input(
     sequence_dir,
     is_last_season=False,
     previous_season_end=None,
+    season_database=None,
 ):
     single_dir = os.path.join(sequence_dir, f"_rotation_{index}")
     Path(single_dir).mkdir(parents=True, exist_ok=True)
@@ -590,36 +607,33 @@ def generate_rotation_input(
         is_last_season=is_last_season,
         previous_season_end=previous_season_end,
     )
-    connection = season_connection(
-        context["master_input_connection"], season_row, management
+    connection = configure_season_connection(
+        season_database, season_row, management
     )
-    try:
-        crop = dssatcultivarconverter.DssatCultivarConverter().export(
-            simulation_path(context["directory_path"], season_row),
-            connection,
-            context["pltfolder"],
-            sequence_dir,
-            context["dssat_version"],
-        )
+    crop = dssatcultivarconverter.DssatCultivarConverter().export(
+        simulation_path(context["directory_path"], season_row),
+        connection,
+        context["pltfolder"],
+        sequence_dir,
+        context["dssat_version"],
+    )
 
-        dssatsoilconverter.DssatSoilConverter().export(
-            soil_simulation_path(context["directory_path"], season_row),
-            context["model_dictionary_connection"],
-            connection,
-            sequence_dir,
-        )
+    dssatsoilconverter.DssatSoilConverter().export(
+        soil_simulation_path(context["directory_path"], season_row),
+        context["model_dictionary_connection"],
+        connection,
+        sequence_dir,
+    )
 
-        dssatxconverter.DssatXConverter().export(
-            x_simulation_path(context["directory_path"], season_row),
-            context["model_dictionary_connection"],
-            connection,
-            single_dir,
-            crop,
-            context["dt"],
-            context["dssat_version"],
-        )
-    finally:
-        connection.close()
+    dssatxconverter.DssatXConverter().export(
+        x_simulation_path(context["directory_path"], season_row),
+        context["model_dictionary_connection"],
+        connection,
+        single_dir,
+        crop,
+        context["dailyoutput"],
+        context["dssat_version"],
+    )
 
     sections = parse_sections(read_generated_xfile(single_dir))
     set_section_date(
@@ -638,28 +652,36 @@ def generate_rotation_input(
 def generate_successive_rotations(group, context, sequence_dir):
     row = group[0]
     managements = successive_managements(row, context["master_input_connection"])
-    rotations = []
-    previous_season_end = None
-    for index, management in enumerate(managements):
-        rotation = generate_rotation_input(
-            row,
-            management,
-            index + 1,
-            context,
-            sequence_dir,
-            is_last_season=index == len(managements) - 1,
-            previous_season_end=previous_season_end,
-        )
-        rotations.append(rotation)
-        previous_season_end = row_end_date(rotation.row)
-    return rotations
+    season_database = successive_group_connection(
+        context["master_input_connection"]
+    )
+    try:
+        rotations = []
+        previous_season_end = None
+        for index, management in enumerate(managements):
+            rotation = generate_rotation_input(
+                row,
+                management,
+                index + 1,
+                context,
+                sequence_dir,
+                is_last_season=index == len(managements) - 1,
+                previous_season_end=previous_season_end,
+                season_database=season_database,
+            )
+            rotations.append(rotation)
+            previous_season_end = row_end_date(rotation.row)
+        return rotations
+    finally:
+        season_database.close()
 
 
-def create_context(mi, md, directory_path, pltfolder, dt, dssat_version="v47"):
+def create_context(mi, md, directory_path, pltfolder, dt, dailyoutput, dssat_version="v47"):
     return {
         "directory_path": directory_path,
         "pltfolder": pltfolder,
         "dt": dt,
+        "dailyoutput": dailyoutput,
         "dssat_version": dssat_version,
         "master_input_connection": sqlite3.connect(mi),
         "model_dictionary_connection": sqlite3.connect(md),
@@ -744,29 +766,42 @@ def transform_sequence(summary_path, rotations):
 
     rotation_by_sequence = {rotation.index: rotation for rotation in rotations}
     seen_rotation_indexes = set()
+    repeated_single_rotation = len(rotations) == 1
 
     for index, (line, parts) in enumerate(summary_lines):
-        try:
-            rotation_index = int(float(parts[2]))
-        except (ValueError, IndexError):
-            rotation_index = index + 1
-        rotation = rotation_by_sequence.get(rotation_index)
-        if rotation is None or rotation_index in seen_rotation_indexes:
-            continue
-        seen_rotation_indexes.add(rotation_index)
+        if repeated_single_rotation:
+            rotation_index = 1
+            rotation = rotations[0]
+        else:
+            try:
+                rotation_index = int(float(parts[2]))
+            except (ValueError, IndexError):
+                rotation_index = index + 1
+            rotation = rotation_by_sequence.get(rotation_index)
+            if rotation is None or rotation_index in seen_rotation_indexes:
+                continue
+            seen_rotation_indexes.add(rotation_index)
         row = rotation.row
         values = list(map(float, parts[13:13 + len(variable_ids)]))
         record = {variable_ids[i]: values[i] for i in range(len(variable_ids))}
         record["Model"] = "Dssat"
         record["Idsim"] = row["idsim"]
         record["Texte"] = ""
-        record["SeasonOrder"] = int(rotation.management["SeasonOrder"])
-        record["ys"] = int(row["StartYear"])
-        record["y0"] = int(
-            rotation.row["StartYear"]
-            if rotation.index == 1
-            else rotations[rotation.index - 2].row["StartYear"]
+        record["SeasonOrder"] = (
+            index + 1
+            if repeated_single_rotation
+            else int(rotation.management["SeasonOrder"])
         )
+        planting_year = int(record.get("PDAT", 0)) // 1000
+        record["ys"] = planting_year or int(row["StartYear"])
+        if repeated_single_rotation and records:
+            record["y0"] = int(records[-1]["ys"])
+        else:
+            record["y0"] = int(
+                rotation.row["StartYear"]
+                if rotation.index == 1
+                else rotations[rotation.index - 2].row["StartYear"]
+            )
         coords = re.findall(r"([-]?\d+[.]?\d+)[_]", str(row["idsim"]))
         if len(coords) >= 3:
             record["lat"] = float(coords[0])
@@ -975,7 +1010,7 @@ def process_single_row(row, context, directory_path, sequence_dir):
         context["master_input_connection"],
         sequence_dir,
         crop,
-        context["dt"],
+        context["dailyoutput"],
         context["dssat_version"],
     )
     run_dssat_b(sequence_dir, directory_path, context["dt"], context["dssat_version"])
@@ -1000,20 +1035,11 @@ def process_successive_group(
     Path(sequence_dir).mkdir(parents=True, exist_ok=True)
     print(f"Processing DSSAT successive group {group_key(group)} with {len(group)} simulation(s)", flush=True)
 
-    context = create_context(mi, md, directory_path, pltfolder, dt, dssat_version)
+    context = create_context(mi, md, directory_path, pltfolder, dt, dailyoutput, dssat_version)
     try:
         managements = successive_managements(
             group[0], context["master_input_connection"]
         )
-        if len(managements) == 1:
-            dataframe = process_single_row(group[0], context, directory_path, sequence_dir)
-            daily = (
-                read_sequence_daily(sequence_dir, group[0]["idsim"])
-                if dailyoutput == 1
-                else pd.DataFrame()
-            )
-            return dataframe, daily
-
         export_grouped_weather(group, context, sequence_dir)
         nyers = dssat_sequence_years(group)
         rotations = generate_successive_rotations(group, context, sequence_dir)
@@ -1030,7 +1056,7 @@ def process_successive_group(
         Path(sequence_dir, batch_filename_for_version(dssat_version)).write_text(
             build_batch_file(rotations)
         )
-        remove_rotation_workdirs(sequence_dir, rotations)
+        #remove_rotation_workdirs(sequence_dir, rotations)
 
         run_dssat_q(sequence_dir, directory_path, group_id, dssat_version)
         summary = os.path.join(directory_path, f"{SUMMARY_PREFIX}{group_id}.OUT")

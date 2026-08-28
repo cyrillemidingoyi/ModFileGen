@@ -1653,12 +1653,7 @@ def main():
         if not simulations:
             raise ValueError(f"STICS simulation {target_idsim!r} was not found")
 
-    standard, successive = partition_simulations(mi, simulations)
-    print(
-        f"STICS routing: {len(standard)} standard, "
-        f"{len(successive)} successive simulation(s)",
-        flush=True,
-    )
+    standard, successive = simulations, []
 
     md = GlobalVariables.get("dbModelsDictionary")
     directory_path = GlobalVariables.get("directorypath", os.getcwd())
