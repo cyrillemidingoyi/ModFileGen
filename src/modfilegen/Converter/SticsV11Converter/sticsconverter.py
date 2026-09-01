@@ -1,5 +1,7 @@
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
+from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.soil_repository import SoilDataRepository
 from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailconverter, sticsparamsolconverter
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
@@ -912,6 +914,7 @@ def write_file(directory, filename, content):
 def process_chunk(*args):
     chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir, *options = args
     dailyoutput = int(options[0]) if options else 0
+    q0_strategy = options[1] if len(options) > 1 else "default"
     dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
@@ -925,14 +928,22 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+
+    soil_ids = {
+        row["idsoil"] for row in chunk if row["idsoil"] is not None
+    }
+    parameter_resolver = ParameterResolver(
+        ModelDictionary_Connection, MasterInput_Connection
+    )
+    parameter_resolver.prefetch("sticsv11", {"paramsol"}, soil_ids)
+    soil_repository = SoilDataRepository(MasterInput_Connection)
+    soil_repository.prefetch(soil_ids)
         
     for i, row in enumerate(chunk):
         # Periodically clear caches to free memory
         if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
             print(f" Clearing caches at row {i} to free memory", flush=True)
             weathertable.clear()
-            soiltable.clear()
-            tempopar.clear()
             tectable.clear()
             initable.clear()
             # Also trigger garbage collection
@@ -973,10 +984,13 @@ def process_chunk(*args):
 
             # Soil Station
             is_mixed_crop = bool(row["is_mixed_crop"])
-            soilid =  (row["idsoil"], is_mixed_crop)
+            soilid =  (str(row["idsoil"]).strip().casefold(), is_mixed_crop)
             if soilid not in soiltable:
                 paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
-                r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+                r1 = paramsolconverter.export(
+                    parameter_resolver, soil_repository, usmdir, row["idsoil"],
+                    q0_strategy=q0_strategy,
+                )
                 del paramsolconverter  # Free converter
                 stationconverter = sticsstationconverter.SticsStationConverter()
                 r2 = stationconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, rap, var, prof, usmdir)         
@@ -1105,8 +1119,6 @@ def process_chunk(*args):
         MasterInput_Connection.close()
         # Clear all caches
         weathertable.clear()
-        soiltable.clear()
-        tempopar.clear()
         tectable.clear()
         initable.clear()
         return pd.DataFrame()
@@ -1117,8 +1129,6 @@ def process_chunk(*args):
     
     # Clear all caches before concatenation
     weathertable.clear()
-    soiltable.clear()
-    tempopar.clear()
     tectable.clear()
     initable.clear()
     
@@ -1233,6 +1243,8 @@ def _main_standard(simulations=None):
     pltfolder = GlobalVariables.get("pltfolder")
     nthreads = GlobalVariables.get("nthreads", 4)
     dt = GlobalVariables.get("dt", 1)
+    dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
+    q0_strategy = GlobalVariables.get("sticsv11Q0Strategy", "default")
     parts = GlobalVariables.get("parts", 1)
     tempDir = GlobalVariables.get("tempDir")
     package = GlobalVariables.get("package")
@@ -1271,7 +1283,11 @@ def _main_standard(simulations=None):
     del data  # Free original data list after chunking
     # Create a Pool of worker processes
     import uuid
-    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt, tempDir) for chunk in chunks]
+    args_list = [
+        (chunk, mi, md, tpv6, tppar, directoryPath, pltfolder, rap, var, prof,
+         dt, tempDir, dailyoutput, q0_strategy)
+        for chunk in chunks
+    ]
     del chunks  # Free chunks list after creating args_list
     # create a random name
     result_name = str(uuid.uuid4()) + "_stics"
@@ -1447,6 +1463,7 @@ def process_routed_chunk(
     chunk_index, total_chunks, chunk, weights, successive_ids,
     mi, md, tpv6, tppar, directory_path, pltfolder,
     rap, var, prof, dt, temp_dir, package, dailyoutput,
+    q0_strategy="default",
 ):
     """Process one balanced chunk containing standard and successive idsim rows."""
     from . import sticssuccessiveconverter
@@ -1461,7 +1478,7 @@ def process_routed_chunk(
     if standard_rows:
         standard_frame = process_chunk(
             standard_rows, mi, md, tpv6, tppar, directory_path, pltfolder,
-            rap, var, prof, dt, temp_dir, dailyoutput,
+            rap, var, prof, dt, temp_dir, dailyoutput, q0_strategy,
         )
         if standard_frame is not None and not standard_frame.empty:
             frames.append(standard_frame)
@@ -1485,12 +1502,16 @@ def process_routed_chunk(
                         bool(simulation.get("is_mixed_crop", 0)),
                     )
                 )
-    for simulation in chunk:
-        if str(simulation["idsim"]) in successive_ids:
-            frame, daily, profile = sticssuccessiveconverter.process_simulation(
-                simulation, mi, md, directory_path, temp_dir, pltfolder, package,
-                dt, dailyoutput,
-            )
+    successive_rows = [
+        simulation for simulation in chunk
+        if str(simulation["idsim"]) in successive_ids
+    ]
+    if successive_rows:
+        successive_results = sticssuccessiveconverter.process_simulation_batch(
+            successive_rows, mi, md, directory_path, temp_dir, pltfolder,
+            package, dt, dailyoutput, q0_strategy,
+        )
+        for frame, daily, profile in successive_results:
             if frame is not None and not frame.empty:
                 frames.append(frame)
             if daily is not None and not daily.empty:
@@ -1664,6 +1685,7 @@ def main():
     parts = max(1, int(GlobalVariables.get("parts", 1)))
     dt = int(GlobalVariables.get("dt", 1))
     dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
+    q0_strategy = GlobalVariables.get("sticsv11Q0Strategy", "default")
     if not md or not pltfolder or not temp_dir or not package:
         raise ValueError(
             "dbModelsDictionary, pltfolder, tempDir and package must be configured"
@@ -1717,6 +1739,7 @@ def main():
             chunk_index, len(chunks), chunk, weights, successive_ids,
             mi, md, tpv6, tppar, directory_path,
             pltfolder, rap, var, prof, dt, temp_dir, package, dailyoutput,
+            q0_strategy,
         )
         for chunk_index, chunk in enumerate(chunks)
     )

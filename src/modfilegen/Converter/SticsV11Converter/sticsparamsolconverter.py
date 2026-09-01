@@ -1,35 +1,35 @@
 from modfilegen.converter import Converter
-from sqlite3 import Connection
-import os
-import pandas as pd
+from .soil_parameter_calculators import calculate_q0
 import traceback
 
 class SticsParamSolConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
+    def export(
+        self, parameter_resolver, soil_repository, usmdir, id_soil,
+        q0_strategy="default",
+    ):
         file_name = "param.sol"
-        fileContent = ""
-        ST = directory_path.split(os.sep)
-        id_sim = ST[-3]
-        T = "Select  Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'sticsv11') And ([Table] = 'paramsol'));"
-        DT = pd.read_sql_query(T,ModelDictionary_Connection)
-        defaults = DT.set_index("Champ")["dv"].to_dict() 
-        
-        fetchAllQuery = """SELECT Soil.IdSoil,Soil.SoilOption, Soil.OrganicC,Soil.OrganicNStock as "OrganicNStock", Soil.SoilRDepth, Soil.SoilTotalDepth, Soil.SoilTextureType, Soil.Wwp, Soil.Wfc, Soil.bd, Soil.albedo, Soil.Ph as "pH", Soil.cf, RunoffTypes.RunoffCoefBSoil as "RunoffCoefBSoil", Soil.Clay as "Clay"
-        FROM RunoffTypes INNER JOIN (Soil INNER JOIN SimUnitList ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)) ON RunoffTypes.RunoffType = Soil.RunoffType
-        where idSim='%s';"""%(id_sim)
-        DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
-        rows = DA.to_dict(orient='records')
-        
+        defaults = parameter_resolver.resolve("sticsv11", "paramsol", id_soil)
+        row = soil_repository.get_soil(id_soil)
+        layers = soil_repository.get_layers(id_soil)
+        if parameter_resolver.has_override(
+            "sticsv11", "paramsol", "q0", id_soil
+        ):
+            print(f"Using overridden q0 value for soil ID {id_soil}")
+            q0 = defaults["q0"]
+        elif str(q0_strategy).strip().casefold() == "computed":
+            q0 = calculate_q0(row)
+        else:
+            q0 = defaults["q0"]        
         file_lines = []
-        for row in rows:
+        if row:
             line1 = [
                 "     1  ","Sol", f"{row['Clay']:.1f}", f"{row['OrganicNStock']:.4f}",
                 f"{float(defaults['profhum']):.4f}", f"{float(defaults['calc']):.4f}",
                 f"{row['pH']:.4f}", f"{float(defaults['concseuil']):.4f}",
-                f"{row['albedo']:.4f}", f"{float(defaults['q0']):.4f}",
+                f"{row['albedo']:.4f}", f"{float(q0):.4f}",
                 f"{row['RunoffCoefBSoil']:.4f}", f"{row['SoilRDepth']:.4f}",
                 f"{float(defaults['pluiebat']):.4f}", f"{float(defaults['mulchbat']):.4f}",
                 f"{float(defaults['zesx']):.4f}", f"{float(defaults['cfes']):.4f}",
@@ -50,9 +50,6 @@ class SticsParamSolConverter(Converter):
                 f"{int(float(defaults['profdenit'])):.0f}", f"{float(defaults['vpotdenit']):.4f}"
             ]
             file_lines.append(" ".join(line3))            
-            sql = f"""Select * From SoilLayers where idsoil = '{row['IdSoil']}' Order by NumLayer"""
-            DA2 = pd.read_sql_query(sql, master_input_connection)
-            rows = DA2.to_dict(orient='records')
             for i in range(5):
                 if row["SoilOption"] == "simple":
                     #fileContent += "     1   "
@@ -75,12 +72,12 @@ class SticsParamSolConverter(Converter):
                     ]
                     file_lines[-1] += " " + " ".join(values)
                 else:
-                    if i < len(rows):
+                    if i < len(layers):
                         values = ["     1  ",
-                            f"{rows[i]['Ldown'] - rows[i]['Lup']:.2f}",
-                            f"{rows[i]['Wfc']/rows[i]['bd']:.2f}",
-                            f"{rows[i]['Wwp']/rows[i]['bd']:.2f}",
-                            f"{rows[i]['bd']:.2f}",
+                            f"{layers[i]['Ldown'] - layers[i]['Lup']:.2f}",
+                            f"{layers[i]['Wfc']/layers[i]['bd']:.2f}",
+                            f"{layers[i]['Wwp']/layers[i]['bd']:.2f}",
+                            f"{layers[i]['bd']:.2f}",
                             f"{row['cf']:.2f}",
                             f"{int(defaults['typecailloux'])}",
                             f"{int(float(defaults['infil']))}",

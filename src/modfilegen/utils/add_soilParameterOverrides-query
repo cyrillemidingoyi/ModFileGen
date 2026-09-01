@@ -1,0 +1,14 @@
+-- database: ../../../tests/stics_successive/MasterInput.db
+
+CREATE TABLE SoilParameterOverrides (
+    IdSoil          TEXT NOT NULL,
+    Model           TEXT NOT NULL,
+    TargetTable     TEXT NOT NULL,
+    Parameter       TEXT NOT NULL,
+    Value           TEXT NOT NULL,
+    PRIMARY KEY (IdSoil, Model, TargetTable, Parameter),
+    FOREIGN KEY (IdSoil) REFERENCES Soil(IdSoil)
+);
+
+CREATE INDEX idx_soil_parameter_overrides_lookup
+ON SoilParameterOverrides (Model, TargetTable, IdSoil);

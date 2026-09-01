@@ -19,6 +19,8 @@ import uuid
 import pandas as pd
 
 from modfilegen import GlobalVariables
+from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.soil_repository import SoilDataRepository
 from . import sticsclimatconverter
 from . import sticsficiniconverter
 from . import sticsficplt1converter
@@ -321,9 +323,12 @@ def load_static_stics_files(package):
     return tuple((parameters / name).read_text() for name in ("rap.mod", "var.mod", "prof.mod"))
 
 
-def create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt):
+def create_context(
+    mi, md, directory_path, temp_dir, pltfolder, package, dt,
+    soil_ids=None, q0_strategy="default",
+):
     rap, var, prof = load_static_stics_files(package)
-    return {
+    context = {
         "directory_path": directory_path,
         "temp_dir": temp_dir,
         "pltfolder": pltfolder,
@@ -335,7 +340,34 @@ def create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt):
         "tempoparv6": common_tempoparv6(md),
         "master": sqlite3.connect(mi),
         "dictionary": sqlite3.connect(md),
+        "q0_strategy": q0_strategy,
+        "paramsol_cache": {},
     }
+    soil_ids = set(soil_ids or ())
+    context["parameter_resolver"] = ParameterResolver(
+        context["dictionary"], context["master"]
+    )
+    context["parameter_resolver"].prefetch(
+        "sticsv11", {"paramsol"}, soil_ids
+    )
+    context["soil_repository"] = SoilDataRepository(context["master"])
+    context["soil_repository"].prefetch(soil_ids)
+    return context
+
+
+def write_cached_paramsol(context, usmdir, id_soil):
+    soil_key = str(id_soil).strip().casefold()
+    if soil_key not in context["paramsol_cache"]:
+        context["paramsol_cache"][soil_key] = (
+            sticsparamsolconverter.SticsParamSolConverter().export(
+                context["parameter_resolver"], context["soil_repository"],
+                str(usmdir), id_soil, q0_strategy=context["q0_strategy"],
+            )
+        )
+    else:
+        write_file(
+            str(usmdir), "param.sol", context["paramsol_cache"][soil_key]
+        )
 
 
 def generate_season_inputs(simulation, season, context):
@@ -357,9 +389,7 @@ def generate_season_inputs(simulation, season, context):
     sticstempoparconverter.SticsTempoparConverter().export(
         sim_path, context["master"], context["tempopar"], str(usmdir)
     )
-    sticsparamsolconverter.SticsParamSolConverter().export(
-        sim_path, context["dictionary"], context["master"], str(usmdir)
-    )
+    write_cached_paramsol(context, usmdir, row["idsoil"])
     sticsstationconverter.SticsStationConverter().export(
         sim_path, context["dictionary"], context["master"], context["rap"],
         context["var"], context["prof"], str(usmdir),
@@ -439,9 +469,14 @@ def collect_reports(simulation, season, season_key, directory_path, dt):
 
 def process_simulation(
     simulation, mi, md, directory_path, temp_dir, pltfolder, package, dt,
-    dailyoutput=0,
+    dailyoutput=0, q0_strategy="default", context=None,
 ):
-    context = create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt)
+    owns_context = context is None
+    if owns_context:
+        context = create_context(
+            mi, md, directory_path, temp_dir, pltfolder, package, dt,
+            soil_ids={simulation["idsoil"]}, q0_strategy=q0_strategy,
+        )
     usm_dirs = []
     dataframes = []
     daily_dataframes = []
@@ -494,8 +529,9 @@ def process_simulation(
                 )
             previous_usmdir = usmdir
     finally:
-        context["master"].close()
-        context["dictionary"].close()
+        if owns_context:
+            context["master"].close()
+            context["dictionary"].close()
         if dt == 1:
             for usmdir in usm_dirs:
                 shutil.rmtree(usmdir, ignore_errors=True)
@@ -512,6 +548,29 @@ def process_simulation(
     return summary, daily, profile
 
 
+def process_simulation_batch(
+    simulations, mi, md, directory_path, temp_dir, pltfolder, package, dt,
+    dailyoutput=0, q0_strategy="default",
+):
+    """Process several simulations with one shared, prefetched context."""
+    context = create_context(
+        mi, md, directory_path, temp_dir, pltfolder, package, dt,
+        soil_ids={simulation["idsoil"] for simulation in simulations},
+        q0_strategy=q0_strategy,
+    )
+    try:
+        return [
+            process_simulation(
+                simulation, mi, md, directory_path, temp_dir, pltfolder,
+                package, dt, dailyoutput, q0_strategy, context=context,
+            )
+            for simulation in simulations
+        ]
+    finally:
+        context["master"].close()
+        context["dictionary"].close()
+
+
 def main(simulations=None):
     from joblib import Parallel, delayed
 
@@ -524,6 +583,7 @@ def main(simulations=None):
     nthreads = max(1, int(GlobalVariables.get("nthreads", 1)))
     dt = int(GlobalVariables.get("dt", 0))
     dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
+    q0_strategy = GlobalVariables.get("sticsv11Q0Strategy", "default")
 
     if not mi or not md:
         raise ValueError("dbMasterInput and dbModelsDictionary must be configured")
@@ -540,13 +600,16 @@ def main(simulations=None):
         print("No simulation to process.", flush=True)
         return None
 
-    results = Parallel(n_jobs=nthreads, backend="loky")(
-        delayed(process_simulation)(
-            simulation, mi, md, directory_path, temp_dir, pltfolder, package, dt,
-            dailyoutput,
+    batches = [simulations[index::nthreads] for index in range(nthreads)]
+    batches = [batch for batch in batches if batch]
+    batch_results = Parallel(n_jobs=nthreads, backend="loky")(
+        delayed(process_simulation_batch)(
+            batch, mi, md, directory_path, temp_dir, pltfolder, package, dt,
+            dailyoutput, q0_strategy,
         )
-        for simulation in simulations
+        for batch in batches
     )
+    results = [result for batch in batch_results for result in batch]
     frames = [
         result[0] for result in results
         if result is not None and result[0] is not None and not result[0].empty
