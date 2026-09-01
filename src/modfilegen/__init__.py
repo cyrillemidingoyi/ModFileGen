@@ -15,5 +15,6 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "tempDir": "",
                     "package": "",
                     "thirdyear": 0,
-                    "dailyoutput": 0
+                    "dailyoutput": 0,
+                    "sticsv11Q0Strategy": "default"
                      }

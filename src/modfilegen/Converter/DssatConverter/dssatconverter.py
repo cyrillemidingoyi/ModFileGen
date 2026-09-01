@@ -14,7 +14,7 @@ CONFIGURATION (in GlobalVariables):
 
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
-from . import dssatweatherconverter, dssatcultivarconverter, dssatsoilconverter, dssatxconverter
+from . import dssatcultivarconverter, dssatsoilconverter, dssatweatherconverter, dssatxconverter
 import sys, subprocess, shutil
 import concurrent.futures
 import numpy as np
@@ -283,7 +283,7 @@ def process_chunk(*args):
                 MasterInput_Connection,
                 usmdir,
                 crop,
-                dt,
+                dailyoutput,
                 dssat_version,
             )
             del xconverter  # Free converter

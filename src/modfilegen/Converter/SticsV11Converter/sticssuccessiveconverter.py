@@ -19,6 +19,8 @@ import uuid
 import pandas as pd
 
 from modfilegen import GlobalVariables
+from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.soil_repository import SoilDataRepository
 from . import sticsclimatconverter
 from . import sticsficiniconverter
 from . import sticsficplt1converter
@@ -78,7 +80,7 @@ def _table_columns(connection, table):
 
 
 def fetch_rotation_seasons(connection, simulation):
-    """Return validated seasons for one long-running SimUnitList row."""
+    """Expand and validate a management pattern over one SimUnitList period."""
     crop_columns = _table_columns(connection, "CropManagement")
     missing = REQUIRED_CROP_COLUMNS - crop_columns
     if missing:
@@ -121,8 +123,7 @@ def fetch_rotation_seasons(connection, simulation):
 
     experiment_start = simulation_start_date(simulation)
     experiment_end = simulation_end_date(simulation)
-    seasons = []
-    previous_end = None
+    pattern = []
 
     for season_order, plants_df in dataframe.groupby("SeasonOrder", sort=True):
         plants_df = plants_df.sort_values("PlantOrder")
@@ -139,38 +140,87 @@ def fetch_rotation_seasons(connection, simulation):
                 f"All plants in season {season_order} must share SeasonYearOffset"
             )
 
-        sowing_year = int(simulation["StartYear"]) + int(year_offsets[0])
         plants = plants_df.to_dict(orient="records")
         for plant in plants:
-            plant["SowingDate"] = julian_date(sowing_year, plant["sowingdate"])
-            plant["HarvestDate"] = plant["SowingDate"] + timedelta(days=plant["DHarvest"])
-
-        season_start = experiment_start if previous_end is None else previous_end + timedelta(days=1)
-        season_end = max(plant["HarvestDate"] for plant in plants)
-        first_sowing = min(plant["SowingDate"] for plant in plants)
-
-        if first_sowing < season_start:
-            raise ValueError(
-                f"Season {season_order} is sown on {first_sowing}, before its period "
-                f"starts on {season_start}"
-            )
-        if season_end > experiment_end:
-            raise ValueError(
-                f"Season {season_order} ends on {season_end}, after SimUnitList ends "
-                f"on {experiment_end}"
-            )
-
-        seasons.append(
+            plant["ManagementPlantOrder"] = int(plant["PlantOrder"])
+        pattern.append(
             {
-                "SeasonOrder": int(season_order),
-                "StartDate": season_start,
-                "EndDate": season_end,
-                "SeasonYearOffset": int(year_offsets[0]),
+                "ManagementSeasonOrder": int(season_order),
+                "PatternYearOffset": int(year_offsets[0]),
                 "IsMixedCrop": len(plants) > 1,
                 "Plants": plants,
             }
         )
-        previous_end = season_end
+
+    minimum_offset = min(season["PatternYearOffset"] for season in pattern)
+    if minimum_offset < 0:
+        raise ValueError(f"SeasonYearOffset cannot be negative; found {minimum_offset}")
+    pattern_years = max(season["PatternYearOffset"] for season in pattern) + 1
+
+    seasons = []
+    previous_end = None
+    cycle_index = 0
+    reached_experiment_end = False
+    while not reached_experiment_end:
+        seasons_added = 0
+        for template in pattern:
+            repeated_offset = (
+                template["PatternYearOffset"] + cycle_index * pattern_years
+            )
+            sowing_year = int(simulation["StartYear"]) + repeated_offset
+            plants = [dict(plant) for plant in template["Plants"]]
+            for plant in plants:
+                plant["SowingDate"] = julian_date(sowing_year, plant["sowingdate"])
+                plant["HarvestDate"] = plant["SowingDate"] + timedelta(
+                    days=plant["DHarvest"]
+                )
+
+            first_sowing = min(plant["SowingDate"] for plant in plants)
+            if first_sowing > experiment_end:
+                reached_experiment_end = True
+                break
+
+            season_start = (
+                experiment_start if previous_end is None else previous_end + timedelta(days=1)
+            )
+            if first_sowing < season_start:
+                raise ValueError(
+                    f"Repeated season {len(seasons) + 1} (management season "
+                    f"{template['ManagementSeasonOrder']}) is sown on {first_sowing}, "
+                    f"before its period starts on {season_start}"
+                )
+
+            calculated_end = max(plant["HarvestDate"] for plant in plants)
+            season_end = min(calculated_end, experiment_end)
+            if calculated_end > experiment_end:
+                for plant in plants:
+                    plant["HarvestDate"] = min(plant["HarvestDate"], experiment_end)
+                reached_experiment_end = True
+
+            seasons.append(
+                {
+                    "SeasonOrder": len(seasons) + 1,
+                    "ManagementSeasonOrder": template["ManagementSeasonOrder"],
+                    "CycleIndex": cycle_index,
+                    "StartDate": season_start,
+                    "EndDate": season_end,
+                    "SeasonYearOffset": repeated_offset,
+                    "PatternYearOffset": template["PatternYearOffset"],
+                    "IsMixedCrop": template["IsMixedCrop"],
+                    "Plants": plants,
+                }
+            )
+            previous_end = season_end
+            seasons_added += 1
+            if reached_experiment_end:
+                break
+
+        if seasons_added == 0:
+            break
+        cycle_index += 1
+
+    if seasons and seasons[-1]["EndDate"] < experiment_end:
+        seasons[-1]["EndDate"] = experiment_end
 
     return seasons
 
@@ -273,9 +323,12 @@ def load_static_stics_files(package):
     return tuple((parameters / name).read_text() for name in ("rap.mod", "var.mod", "prof.mod"))
 
 
-def create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt):
+def create_context(
+    mi, md, directory_path, temp_dir, pltfolder, package, dt,
+    soil_ids=None, q0_strategy="default",
+):
     rap, var, prof = load_static_stics_files(package)
-    return {
+    context = {
         "directory_path": directory_path,
         "temp_dir": temp_dir,
         "pltfolder": pltfolder,
@@ -287,7 +340,34 @@ def create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt):
         "tempoparv6": common_tempoparv6(md),
         "master": sqlite3.connect(mi),
         "dictionary": sqlite3.connect(md),
+        "q0_strategy": q0_strategy,
+        "paramsol_cache": {},
     }
+    soil_ids = set(soil_ids or ())
+    context["parameter_resolver"] = ParameterResolver(
+        context["dictionary"], context["master"]
+    )
+    context["parameter_resolver"].prefetch(
+        "sticsv11", {"paramsol"}, soil_ids
+    )
+    context["soil_repository"] = SoilDataRepository(context["master"])
+    context["soil_repository"].prefetch(soil_ids)
+    return context
+
+
+def write_cached_paramsol(context, usmdir, id_soil):
+    soil_key = str(id_soil).strip().casefold()
+    if soil_key not in context["paramsol_cache"]:
+        context["paramsol_cache"][soil_key] = (
+            sticsparamsolconverter.SticsParamSolConverter().export(
+                context["parameter_resolver"], context["soil_repository"],
+                str(usmdir), id_soil, q0_strategy=context["q0_strategy"],
+            )
+        )
+    else:
+        write_file(
+            str(usmdir), "param.sol", context["paramsol_cache"][soil_key]
+        )
 
 
 def generate_season_inputs(simulation, season, context):
@@ -299,6 +379,7 @@ def generate_season_inputs(simulation, season, context):
         context["directory_path"], str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"])
     )
     season_order = season["SeasonOrder"]
+    management_season_order = season["ManagementSeasonOrder"]
     fictec_date_offset = season_fictec_date_offset(row, season)
     season_end_day = stics_datefin(
         row["StartYear"], row["EndYear"], row["EndDay"]
@@ -308,20 +389,19 @@ def generate_season_inputs(simulation, season, context):
     sticstempoparconverter.SticsTempoparConverter().export(
         sim_path, context["master"], context["tempopar"], str(usmdir)
     )
-    sticsparamsolconverter.SticsParamSolConverter().export(
-        sim_path, context["dictionary"], context["master"], str(usmdir)
-    )
+    write_cached_paramsol(context, usmdir, row["idsoil"])
     sticsstationconverter.SticsStationConverter().export(
         sim_path, context["dictionary"], context["master"], context["rap"],
-        context["var"], context["prof"], str(usmdir), season_order=season_order,
+        context["var"], context["prof"], str(usmdir),
+        season_order=management_season_order,
     )
     sticsnewtravailconverter.SticsNewTravailConverter().export(
         sim_path, context["dictionary"], context["master"], str(usmdir),
-        season_order=season_order,
+        season_order=management_season_order,
     )
     sticsficiniconverter.SticsFicIniConverter().export(
         sim_path, context["dictionary"], context["master"], str(usmdir),
-        season_order=season_order, dt=context["dt"],
+        season_order=management_season_order, dt=context["dt"],
     )
     sticsclimatconverter.SticsClimatConverter().export(
         sim_path,
@@ -333,12 +413,12 @@ def generate_season_inputs(simulation, season, context):
     )
     sticsfictec1converter.SticsFictec1Converter().export(
         sim_path, context["dictionary"], context["master"], str(usmdir),
-        season_order=season_order, date_offset=fictec_date_offset,
+        season_order=management_season_order, date_offset=fictec_date_offset,
         simulation_end_day=season_end_day,
     )
     sticsficplt1converter.SticsFicplt1Converter().export(
         sim_path, context["master"], context["pltfolder"], str(usmdir),
-        season_order=season_order,
+        season_order=management_season_order,
     )
     adapt_usm_calendar(str(usmdir), row)
     return row, str(usmdir), season_key
@@ -389,9 +469,14 @@ def collect_reports(simulation, season, season_key, directory_path, dt):
 
 def process_simulation(
     simulation, mi, md, directory_path, temp_dir, pltfolder, package, dt,
-    dailyoutput=0,
+    dailyoutput=0, q0_strategy="default", context=None,
 ):
-    context = create_context(mi, md, directory_path, temp_dir, pltfolder, package, dt)
+    owns_context = context is None
+    if owns_context:
+        context = create_context(
+            mi, md, directory_path, temp_dir, pltfolder, package, dt,
+            soil_ids={simulation["idsoil"]}, q0_strategy=q0_strategy,
+        )
     usm_dirs = []
     dataframes = []
     daily_dataframes = []
@@ -444,8 +529,9 @@ def process_simulation(
                 )
             previous_usmdir = usmdir
     finally:
-        context["master"].close()
-        context["dictionary"].close()
+        if owns_context:
+            context["master"].close()
+            context["dictionary"].close()
         if dt == 1:
             for usmdir in usm_dirs:
                 shutil.rmtree(usmdir, ignore_errors=True)
@@ -462,6 +548,29 @@ def process_simulation(
     return summary, daily, profile
 
 
+def process_simulation_batch(
+    simulations, mi, md, directory_path, temp_dir, pltfolder, package, dt,
+    dailyoutput=0, q0_strategy="default",
+):
+    """Process several simulations with one shared, prefetched context."""
+    context = create_context(
+        mi, md, directory_path, temp_dir, pltfolder, package, dt,
+        soil_ids={simulation["idsoil"] for simulation in simulations},
+        q0_strategy=q0_strategy,
+    )
+    try:
+        return [
+            process_simulation(
+                simulation, mi, md, directory_path, temp_dir, pltfolder,
+                package, dt, dailyoutput, q0_strategy, context=context,
+            )
+            for simulation in simulations
+        ]
+    finally:
+        context["master"].close()
+        context["dictionary"].close()
+
+
 def main(simulations=None):
     from joblib import Parallel, delayed
 
@@ -474,6 +583,7 @@ def main(simulations=None):
     nthreads = max(1, int(GlobalVariables.get("nthreads", 1)))
     dt = int(GlobalVariables.get("dt", 0))
     dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
+    q0_strategy = GlobalVariables.get("sticsv11Q0Strategy", "default")
 
     if not mi or not md:
         raise ValueError("dbMasterInput and dbModelsDictionary must be configured")
@@ -490,13 +600,16 @@ def main(simulations=None):
         print("No simulation to process.", flush=True)
         return None
 
-    results = Parallel(n_jobs=nthreads, backend="loky")(
-        delayed(process_simulation)(
-            simulation, mi, md, directory_path, temp_dir, pltfolder, package, dt,
-            dailyoutput,
+    batches = [simulations[index::nthreads] for index in range(nthreads)]
+    batches = [batch for batch in batches if batch]
+    batch_results = Parallel(n_jobs=nthreads, backend="loky")(
+        delayed(process_simulation_batch)(
+            batch, mi, md, directory_path, temp_dir, pltfolder, package, dt,
+            dailyoutput, q0_strategy,
         )
-        for simulation in simulations
+        for batch in batches
     )
+    results = [result for batch in batch_results for result in batch]
     frames = [
         result[0] for result in results
         if result is not None and result[0] is not None and not result[0].empty

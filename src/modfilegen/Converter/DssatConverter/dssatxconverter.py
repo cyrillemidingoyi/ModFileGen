@@ -954,7 +954,7 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
 
 
 
-def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection, dt):
+def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection, dailyoutput):
     fileContent = ""
     storeKeyDataN = 0
     storeNumMaxSimu = 1
@@ -983,7 +983,7 @@ def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connectio
         dssat_tableName1 = "dssat_x_simulation_management"
         fileContent += writeBlockManagement(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
         dssat_tableName1 = "dssat_x_simulation_outputs"
-        fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection, dt)
+        fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection, dailyoutput)
         fileContent += "\n"
         #z = 0
         if Dv_planting=="A" or Dv_irri=="A" or Dv_ferti=="A" or Dv_hari=="A" or Dv_resi=="A":
@@ -1170,9 +1170,9 @@ def writeBlockManagement(dssat_tableName, dssat_tableId, idSim, modelDictionary_
     
 
 
-def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, dt):
+def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, dailyoutput):
     fileContent = ""
-    daily = "N" if dt ==1 else "Y"
+    daily = "Y" if dailyoutput == 1 else "N"
     siteColumnsHeader = "@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT"
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -1421,7 +1421,7 @@ class DssatXConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dt, dssat_version="v47"):
+    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dailyoutput, dssat_version="v47"):
         ST = directory_path.split(os.sep)
         idSim = ST[-2]
         idMangt = ST[-1]
@@ -1575,7 +1575,7 @@ class DssatXConverter(Converter):
         # SIMULATION CONTROLS
         fileContent += "\n"
         fileContent += "*SIMULATION CONTROLS\n"
-        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection, dt)
+        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection, dailyoutput)
         
         try:
             # Export file to specified directory

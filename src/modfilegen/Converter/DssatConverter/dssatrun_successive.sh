@@ -21,6 +21,7 @@ esac
 cd "$USM_DIR"
 "$dssat_command" Q "$batch_file"
 if [ -f "Summary.OUT" ]; then
-    mv Summary.OUT "$input_dir/Summary_${summary_id}.OUT"
+    cp -- Summary.OUT "$input_dir/Summary_${summary_id}.OUT"
 fi
+
 cd "$OLD_PWD"
