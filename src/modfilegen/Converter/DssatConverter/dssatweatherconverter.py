@@ -4,6 +4,15 @@ import os
 import pandas as pd
 import traceback
 
+
+def format_dssat_weather_date(year, day_of_year):
+    """Return a DSSAT YYDDD weather date from SQLite numeric values."""
+    return f"{int(year) % 100:02d}{int(day_of_year):03d}"
+
+
+def mean_dewpoint(minimum, maximum):
+    return (float(minimum) + float(maximum)) / 2.0
+
 class DssatweatherConverter(Converter):
     def __init__(self):
         super().__init__()
@@ -79,7 +88,7 @@ class DssatweatherConverter(Converter):
                     fileNameArray[1] = str(Year_i)[2:4]
                     fileContent += f"*WEATHER DATA : {Site} , {str(Year_i)}\n\n"
                     fileContent += "@ INSI      LAT     LONG  ELEV   TAV   AMP REFHT WNDHT\n"
-                    fileContent += v_fmt_general['INSI'].format(Site[0:4])
+                    fileContent += v_fmt_general['INSI'].format(Mngt.upper())
                     fileContent += v_fmt_general['LAT'].format(row['latitudeDD'])
                     fileContent += v_fmt_general["LONG"].format(row['longitudeDD'])
                     fileContent += v_fmt_general["ELEV"].format(row['altitude']) 
@@ -96,7 +105,9 @@ class DssatweatherConverter(Converter):
                                         
                     fileContent += "@DATE  SRAD  TMAX  TMIN  RAIN  DEWP  WIND   PAR  EVAP  RHUM\n"
                     for row in rows:
-                        fileContent += v_fmt["DATE"].format(str(row['year'])[2:4]+str(row['DOY']).rjust(3,"0"))
+                        fileContent += v_fmt["DATE"].format(
+                            format_dssat_weather_date(row['year'], row['DOY'])
+                        )
                         fileContent += v_fmt["SRAD"].format(row['srad'])  
                         fileContent += v_fmt['TMAX'].format(row['tmax'])
                         fileContent += v_fmt['TMIN'].format(row['tmin'])  
@@ -105,12 +116,14 @@ class DssatweatherConverter(Converter):
                             fileContent += v_fmt['DEWP'].format(row['dewp'])
                         else:
                             if ('Tdewmin' in row and row['Tdewmin']) and ('Tdewmax' in row and  row['Tdewmax']):
-                                fileContent += v_fmt['DEWP'].format(float(row['Tdewmin']) + float(row['Tdewmax']) / 2.0)
+                                fileContent += v_fmt['DEWP'].format(
+                                    mean_dewpoint(row['Tdewmin'], row['Tdewmax'])
+                                )
                             else:
                                 fileContent += ' '*6
                         fileContent += v_fmt['WIND'].format(row['wind']*86.4) if 'wind' in row and row['wind'] is not None else ' '*6 
-                        fileContent += v_fmt['PAR'].format(row['par']) if 'par' in row and row['par'] is not None else  ' '*6
-                        fileContent += v_fmt['EVAP'].format(row['evap']) if 'evap' in row and row['evap'] is not None else ' '*6
+                        fileContent += v_fmt['PAR'].format(row['par']) if 'par' in row and row['par'] is not None else v_fmt['PAR'].format(-99)
+                        fileContent += v_fmt['EVAP'].format(row['evap']) if 'evap' in row and row['evap'] is not None else v_fmt['EVAP'].format(-99)
                         fileContent += v_fmt['RHUM'].format(float(row['rhum'])) +"\n" if 'rhum' in row and  row['rhum'] is not None else ' '*6 +"\n"
                         
                 file_name = fileNameArray[0] + fileNameArray[1] + fileNameArray[2] + fileNameArray[3]
