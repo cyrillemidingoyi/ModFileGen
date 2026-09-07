@@ -121,11 +121,12 @@ def dssat_sequence_end_date(group, nyers=None):
 
 def sequence_weather_years(group):
     first_year = row_start_date(group[0]).year
-    # DSSAT reads weather on the exclusive NYERS boundary while closing a Q
-    # sequence.  When SDATE is January 1, that boundary is January 1 of the
-    # following calendar year, so its weather file must also be available.
+    # DSSAT reads weather beyond the last completed Q-sequence cycle while
+    # deciding whether another cycle starts.  For a non-January SDATE this
+    # crosses into the calendar year after the NYERS boundary year.
     first_start = row_start_date(group[0])
-    last_year = add_years(first_start, dssat_sequence_years(group)).year
+    boundary = add_years(first_start, dssat_sequence_years(group))
+    last_year = boundary.year + (boundary.timetuple().tm_yday > 1)
     return list(range(first_year, last_year + 1))
 
 
