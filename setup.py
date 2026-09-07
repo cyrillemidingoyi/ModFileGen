@@ -8,14 +8,14 @@ from os import walk
 from os.path import abspath, normpath, splitext
 from os.path import join as pj
 
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 
 
 short_descr = "generated required files for crop models."
 readme = open('README.rst').read()
 history = open('HISTORY.rst').read()
-url = "https://gitlab.cirad.fr/modelingplatform/modelfilegen"
+url = "https://github.com/CropModelingPlatform/ModFileGen"
 
 description = ''
 long_description = '''
@@ -28,7 +28,7 @@ with open("src/modfilegen/version.py") as fp:
     version = _version["__version__"]
 
 # find packages
-pkgs = find_packages('src')
+pkgs = find_namespace_packages('src')
 
 pkg_data = {}
 
@@ -59,20 +59,13 @@ setup_kwds = dict(
     
     
     package_data=pkg_data,
-    setup_requires=[
-        ],
-    install_requires=[
-        ],
-    tests_require=[
-        "pytest",
-        ],
-    entry_points={},
     keywords='',
     )
 # #}
 # change setup_kwds below before the next pkglts tag
 
-setup_kwds["entry_points"] = {"console_scripts": ["gen = modfilegen.main:main"]}
+# Entry points now defined in pyproject.toml [project.scripts]
+# setup_kwds["entry_points"] = {"console_scripts": ["gen = modfilegen.main:main"]}
 
 # do not change things below
 # {# pkglts, pysetup.call

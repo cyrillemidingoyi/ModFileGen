@@ -38,7 +38,7 @@ class SticsFictec1Converter(Converter):
                     fileContent += "opp1\n"
                     fileContent += str(int(rows2[i]["sowingdate"]) + int(rows2[i]["Dferti"])) + " "
                     fileContent += str(rows2[i]["idresidueStics"]) + " "
-                    fileContent += str(rows2[i]["qmanure"]) + " "
+                    fileContent += str(rows2[i]["Qmanure"]/1000) + " "
                     fileContent += str(rows2[i]["CNferti"] * rows2[i]["NFerti"]) + " "
                     fileContent += str(rows2[i]["CNferti"]) + " "
                     fileContent += str(rows2[i]["NFerti"]) + " "
@@ -46,7 +46,7 @@ class SticsFictec1Converter(Converter):
 
         Sql = """SELECT SoilTillPolicy.SoilTillPolicyCode, SoilTillageOperations.STNumber, SoilTillPolicy.NumTillOperations, SoilTillageOperations.DepthResUp, SoilTillageOperations.DepthResLow, SoilTillageOperations.DSTill
             FROM SoilTillPolicy INNER JOIN SoilTillageOperations ON SoilTillPolicy.SoilTillPolicyCode = SoilTillageOperations.SoilTillPolicyCode
-            where SoilTillPolicy.SoilTillPolicyCode= %s;"""%(rw["SoilTillPolicyCode"])
+            where SoilTillPolicy.SoilTillPolicyCode= '%s';"""%(rw["SoilTillPolicyCode"])
             
         Adp = pd.read_sql_query(Sql, master_input_connection)
         dataTill = Adp.to_dict(orient='records')
@@ -105,15 +105,17 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "codefracappN")
         fileContent += self.format_item(DT, "fertilisation.Qtot_N",fieldIt=1)
 
-        fetchallquery2 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti
-        FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
+        fetchallquery2 = """Select SimUnitList.idsim, InorganicFOperations.N, CropManagement.sowingdate, InorganicFOperations.Dferti, InorganicFertilizationPolicy.NumInorganicFerti, 
+        CropManagement.InoFertiPolicyCode AS InoFertiPolicyCode FROM(InorganicFertilizationPolicy INNER JOIN InorganicFOperations On InorganicFertilizationPolicy.InorgFertiPolicyCode = InorganicFOperations.InorgFertiPolicyCode)
         INNER JOIN (CropManagement INNER JOIN SimUnitList On CropManagement.idMangt = SimUnitList.idMangt) On InorganicFertilizationPolicy.InorgFertiPolicyCode =
         CropManagement.InoFertiPolicyCode where idSim='%s';"""%(ST[-3])
         
         DS2 = pd.read_sql_query(fetchallquery2, master_input_connection)
         fileContent += "nbinterventions\n"
-        fileContent += format(DS2.shape[0], ".0f") + "\n"
-        if DS2.shape[0] > 0:
+        if DS2.iloc[0]["InoFertiPolicyCode"] == "0":
+            fileContent += "0\n"
+        else:
+            fileContent += format(DS2.shape[0], ".0f") + "\n"
             for i in range(DS2.shape[0]):
                 fileContent += "opp1\n"
                 fileContent += str(int(DS2.iloc[i]["sowingdate"] + DS2.iloc[i]["Dferti"])) + " "
@@ -224,7 +226,7 @@ class SticsFictec1Converter(Converter):
         
 
     def FormatSticsRawData(self, data, champ, precision  = 1):
-        rw2 = data[data["champ"]==champ]
+        rw2 = data[data["Champ"]==champ]
         res = rw2["dv"].values[0]
         return res
 

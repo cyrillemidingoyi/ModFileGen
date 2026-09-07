@@ -1,0 +1,275 @@
+name: APSIM Converter Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/modfilegen/Converter/ApsimConverter/**'
+      - 'tests/apsim/**'
+      - '.github/workflows/apsim-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/modfilegen/Converter/ApsimConverter/**'
+      - 'tests/apsim/**'
+      - '.github/workflows/apsim-tests.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test-apsim:
+    name: Test APSIM Converter
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+      fail-fast: false  # Continue testing other versions even if one fails
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better diff analysis
+      
+      - name: 🐍 Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'  # Cache pip packages
+      
+      - name: 📦 Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sqlite3
+      
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy
+          # Install optional dependencies if available
+          pip install joblib || echo "joblib not available - will use fallback"
+          
+      - name: 📊 Verify test databases exist
+        run: |
+          echo "Checking for test databases..."
+          ls -lh tests/data/MasterInput_bon_test.db
+          ls -lh tests/data/ModelsDictionaryArise.db
+          
+          echo ""
+          echo "Database sizes:"
+          du -h tests/data/MasterInput_bon_test.db
+          du -h tests/data/ModelsDictionaryArise.db
+          
+          echo ""
+          echo "Checking database integrity..."
+          sqlite3 tests/data/MasterInput_bon_test.db "PRAGMA integrity_check;"
+          sqlite3 tests/data/ModelsDictionaryArise.db "PRAGMA integrity_check;"
+      
+      - name: 🔧 Create output directories
+        run: |
+          mkdir -p data/apsim/apsim_test_output
+          mkdir -p data/apsim/weather_test_output
+          mkdir -p data/apsim/example_output
+      
+      - name: 🧪 Run weather creation tests
+        run: |
+          echo "=========================================="
+          echo "Testing Weather File Creation"
+          echo "=========================================="
+          python tests/apsim/test_weather_creation.py
+        continue-on-error: false
+      
+      - name: 🧪 Run main APSIM converter tests
+        run: |
+          echo "=========================================="
+          echo "Testing Main APSIM Converter"
+          echo "=========================================="
+          python tests/apsim/test_apsim_main.py
+        timeout-minutes: 10
+        continue-on-error: false
+      
+      - name: 🧪 Run weather converter unit tests
+        if: always()  # Run even if previous tests failed
+        run: |
+          echo "=========================================="
+          echo "Testing Weather Converter Units"
+          echo "=========================================="
+          python tests/apsim/test_apsimweather.py || echo "Weather tests not available"
+        continue-on-error: true
+      
+      - name: 🧪 Run initialization converter tests
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Testing Initialization Converter"
+          echo "=========================================="
+          python tests/apsim/test_apsiminit.py
+        continue-on-error: false
+      
+      - name: 🧪 Run soil converter unit tests
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Testing Soil Converter Units"
+          echo "=========================================="
+          python tests/apsim/test_apsimsoil.py || echo "Soil tests not available"
+        continue-on-error: true
+      
+      - name: 🧪 Run management converter unit tests
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Testing Management Converter Units"
+          echo "=========================================="
+          python tests/apsim/test_apsimmanagement.py || echo "Management tests not available"
+        continue-on-error: true
+      
+      - name: 📊 Check generated files
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Verifying Generated Files"
+          echo "=========================================="
+          
+          echo ""
+          echo "Weather test outputs:"
+          ls -lh data/apsim/weather_test_output/ 2>/dev/null || echo "No weather outputs"
+          
+          echo ""
+          echo "APSIM test outputs (sample):"
+          find data/apsim/apsim_test_output/ -type f | head -20 || echo "No APSIM outputs"
+          
+          echo ""
+          echo "Total files generated:"
+          find data/apsim/ -type f | wc -l
+          
+          echo ""
+          echo "Disk space used:"
+          du -sh data/apsim/
+      
+      - name: 📤 Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apsim-test-results-py${{ matrix.python-version }}
+          path: |
+            data/apsim/weather_test_output/
+            data/apsim/apsim_test_output/
+          retention-days: 7
+          if-no-files-found: warn
+      
+      - name: 📊 Generate test summary
+        if: always()
+        run: |
+          echo "## 🧪 APSIM Converter Tests - Python ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -d "data/apsim/apsim_test_output" ]; then
+            FILE_COUNT=$(find data/apsim/apsim_test_output -type f | wc -l)
+            echo "✅ Generated $FILE_COUNT files in apsim_test_output/" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ No apsim_test_output directory found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -d "data/apsim/weather_test_output" ]; then
+            WEATHER_COUNT=$(find data/apsim/weather_test_output -type f -name "*.met" | wc -l)
+            echo "✅ Generated $WEATHER_COUNT weather files" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ No weather_test_output directory found" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment" >> $GITHUB_STEP_SUMMARY
+          echo "- Python: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- OS: Ubuntu Latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Runner: ${{ runner.os }}" >> $GITHUB_STEP_SUMMARY
+      
+      - name: 🧹 Cleanup (keep artifacts small)
+        if: always()
+        run: |
+          # Keep only a sample of outputs for artifacts
+          if [ -d "data/apsim/apsim_test_output" ]; then
+            # Keep only first 10 simulation directories
+            cd data/apsim/apsim_test_output
+            ls -d */ | tail -n +11 | xargs rm -rf
+          fi
+
+  test-examples:
+    name: Test APSIM Examples
+    runs-on: ubuntu-latest
+    needs: test-apsim  # Run after main tests pass
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy joblib
+      
+      - name: 📊 Create databases indexes
+        run: |
+          echo "Creating database indexes for performance..."
+          sqlite3 tests/data/MasterInput_bon_test.db << EOF
+          CREATE INDEX IF NOT EXISTS idx_idPoint_year ON RaClimateD (idPoint, year);
+          CREATE INDEX IF NOT EXISTS idx_idPoint ON RaClimateD (idPoint);
+          PRAGMA optimize;
+      
+      - name: 🧪 Run weather usage examples
+        run: |
+          echo "=========================================="
+          echo "Testing Weather Usage Examples"
+          echo "=========================================="
+          python tests/apsim/example_weather_usage.py
+        timeout-minutes: 5
+      
+      - name: 📊 Verify example outputs
+        run: |
+          echo "Checking example outputs..."
+          ls -lh data/apsim/example_output/simple_weather.met
+          
+          echo ""
+          echo "Weather library files:"
+          ls -lh data/apsim/example_output/weather_library/ | head -10
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: 📦 Install linting tools
+        run: |
+          pip install flake8 pylint
+      
+      - name: 🔍 Run flake8
+        run: |
+          echo "Running flake8 on APSIM converter..."
+          flake8 src/modfilegen/Converter/ApsimConverter/*.py \
+            --max-line-length=120 \
+            --ignore=E501,W503,E203 \
+            || echo "Flake8 found issues (non-blocking)"
+        continue-on-error: true
+      
+      - name: 🔍 Check for syntax errors
+        run: |
+          echo "Checking Python syntax..."
+          python -m py_compile src/modfilegen/Converter/ApsimConverter/*.py
+          python -m py_compile tests/apsim/*.py

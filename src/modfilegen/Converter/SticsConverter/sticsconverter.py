@@ -17,10 +17,17 @@ from joblib import Parallel, delayed, parallel_backend
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import sys
+import gc
+import psutil
 
+
+
+SUMMARY_COLS = ["Model","Idsim","Texte","Planting","Emergence","Ant","Mat","Biom_ma","Yield","GNumber","MaxLai","Nleac","SoilN","CroN_ma","CumE","Transp"]
+DAILY_OUTPUT_TABLE = "SticsDailyOutput"
+PROFILE_OUTPUT_TABLE = "SticsProfile"
 
 def get_coord(d):
-    res = re.findall("([-]?\d+[.]?\d+)[_]", d)
+    res = re.findall(r"([-]?\d+[.]?\d+)[_]", d)
     lat = float(res[0])
     lon = float(res[1])
     year = int(float(res[2]))
@@ -38,20 +45,62 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
     
-def create_df_summary(f):
+def create_df_summary(f, dt):
     #d_name = os.path.dirname(f).split(os.path.sep)[-1]
     d_name = Path(f).stem[len("mod_rapport_"):]
     remove_comma(f)
-    c = get_coord(d_name)
+    if dt == 1: c = get_coord(d_name)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
     df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
     df['time'] = df['ansemis'].astype(float).astype(int)
-    df['lon'] = c['lon']
-    df['lat'] = c['lat']
+    if dt == 1:
+        df['lon'] = c['lon']
+        df['lat'] = c['lat']
     return df
+
+
+def create_df_daily(mod_s_file, idsim):
+    """Read a STICS mod_s file and return one row per simulation day."""
+    daily = pd.read_csv(mod_s_file, sep=";", skipinitialspace=True)
+    daily.columns = [column.strip() for column in daily.columns]
+    daily = daily.dropna(axis=1, how="all")
+    daily["jul"] = pd.to_numeric(daily["jul"], errors="raise").astype(int)
+    daily.insert(0, "Idsim", str(idsim))
+    daily.insert(0, "Model", "Stics")
+    return daily
+
+
+def create_df_profile(profile_file, idsim):
+    """Convert a STICS profile matrix to long form (day, depth, variable, value)."""
+    with open(profile_file, "r") as profile_stream:
+        variable = profile_stream.readline().strip()
+        header = profile_stream.readline().split()
+
+    if len(header) < 2 or header[0].lower() != "cm":
+        raise ValueError(f"Invalid STICS profile header in {profile_file}")
+
+    julian_days = [int(value) for value in header[1:]]
+    profile = pd.read_csv(
+        profile_file,
+        sep=r"\s+",
+        skiprows=2,
+        header=None,
+        names=["depth_cm", *julian_days],
+    )
+    profile = profile.melt(
+        id_vars="depth_cm",
+        var_name="jul",
+        value_name="value",
+    )
+    profile["depth_cm"] = pd.to_numeric(profile["depth_cm"], errors="raise")
+    profile["jul"] = pd.to_numeric(profile["jul"], errors="raise").astype(int)
+    profile.insert(0, "variable", variable)
+    profile.insert(0, "Idsim", str(idsim))
+    profile.insert(0, "Model", "Stics")
+    return profile
 
 
 
@@ -80,7 +129,7 @@ def common_rap():
     
 def common_prof():
     fileContent = ""
-    fileContent += "2"
+    fileContent += "2\n"
     fileContent += "tsol(iz)\n"
     fileContent += "10\n"
     fileContent += "01 01 2000\n"
@@ -138,6 +187,11 @@ def common_var():
     #'fileContent += "soilN\n"
     fileContent += "ces\n"
     fileContent += "cep\n"
+    fileContent += "Chumt\n"
+    fileContent += "Cb\n"
+    fileContent += "Cr\n"
+    fileContent += "Cmulch\n"
+    fileContent += "Cbmulch\n"
     #'fileContent += "QNplante\n"
     #'fileContent += "Qles\n"
     #'fileContent += "soilN\n"
@@ -856,23 +910,50 @@ def write_file(directory, filename, content):
         print(f"Error writing file {filename} in {directory}: {e}")
         
 def process_chunk(*args):
-    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt = args
+    import psutil
+    import gc
+    proc = psutil.Process(os.getpid())
+    mem_before = proc.memory_info().rss / 1024**2  # MB
+    mem_peak = mem_before
+    chunk, mi, md, tpv6,tppar, directoryPath,pltfolder, rap, var, prof, dt, tempDir, idx, dailyoutput = args
     dataframes = []
+    daily_dataframes = []
+    profile_dataframes = []
     # Apply series of functions to each row in the chunk
     weathertable = {}
     soiltable = {}
     tempopar = {}
     tectable = {}
     initable = {}
+    tmp_csv = os.path.join(directoryPath, f"chunk_{idx}.csv")
+    tmp_daily_csv = os.path.join(directoryPath, f"chunk_{idx}_stics_daily.csv")
+    tmp_profile_csv = os.path.join(directoryPath, f"chunk_{idx}_stics_profile.csv")
+    
+    
+    # Clear caches periodically to prevent memory buildup
+    CACHE_CLEAR_INTERVAL = 50000
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+    
+    dataframes = []
         
     for i, row in enumerate(chunk):
+        write_header = not os.path.exists(tmp_csv)
+        # Periodically clear caches to free memory
+        if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
+            print(f"🗑️ Clearing caches at row {i} to free memory", flush=True)
+            weathertable.clear()
+            soiltable.clear()
+            tempopar.clear()
+            tectable.clear()
+            initable.clear()
+            import gc
+            gc.collect()
         print(f"Iteration {i}", flush=True)
         # Création du chemin du fichier
-        simPath = os.path.join(directoryPath, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
-        usmdir = os.path.join(directoryPath, str(row["idsim"]))
+        simPath = os.path.join(tempDir, str(row["idsim"]), str(row["idPoint"]), str(row["StartYear"]))
+        usmdir = os.path.join(tempDir, str(row["idsim"]))
             
         try:
             # Tempoparv6
@@ -885,6 +966,7 @@ def process_chunk(*args):
                 tempoparConverter = sticstempoparconverter.SticsTempoparConverter()
                 r = tempoparConverter.export(simPath, MasterInput_Connection, tppar, usmdir)
                 tempopar[tempoparid] = r
+                del tempoparConverter  # Free converter object
             else:
                 write_file(usmdir, "tempopar.sti", tempopar[tempoparid])
 
@@ -892,10 +974,12 @@ def process_chunk(*args):
             soilid =  row["idsoil"]
             if soilid not in soiltable:
                 paramsolconverter = sticsparamsolconverter.SticsParamSolConverter()
-                r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)           
+                r1 = paramsolconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+                del paramsolconverter  # Free converter
                 stationconverter = sticsstationconverter.SticsStationConverter()
                 r2 = stationconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, rap, var, prof, usmdir)         
                 soiltable[soilid] = [r1, r2]
+                del stationconverter  # Free converter
             else:
                 write_file(usmdir, "param.sol", soiltable[soilid][0])
                 write_file(usmdir, "station.txt", soiltable[soilid][1][0])
@@ -907,6 +991,7 @@ def process_chunk(*args):
             # NewTravail
             newtravailconverter = sticsnewtravailconverter.SticsNewTravailConverter()
             newtravailconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+            del newtravailconverter  # Free converter
             
             # Init  
             iniid =  ".".join([str(row["idsoil"]), str(row["idIni"])])    
@@ -914,6 +999,7 @@ def process_chunk(*args):
                 ficiniconverter = sticsficiniconverter.SticsFicIniConverter()
                 r = ficiniconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 initable[iniid] = r
+                del ficiniconverter  # Free converter
             else:
                 write_file(usmdir, "ficini.txt", initable[iniid])
             
@@ -923,6 +1009,7 @@ def process_chunk(*args):
                 climatconverter = sticsclimatconverter.SticsClimatConverter()
                 r = climatconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 weathertable[climid] = r
+                del climatconverter  # Free converter
             else:
                 write_file(usmdir, "climat.txt", weathertable[climid])
             
@@ -932,17 +1019,25 @@ def process_chunk(*args):
                 fictec1converter = sticsfictec1converter.SticsFictec1Converter()
                 r = fictec1converter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
                 tectable[tecid] = r
+                del fictec1converter  # Free converter
             else:
                 write_file(usmdir, "fictec1.txt", tectable[tecid])
             
             # Ficplt1   
             ficplt1converter = sticsficplt1converter.SticsFicplt1Converter()
             ficplt1converter.export(simPath, MasterInput_Connection, pltfolder, usmdir)
+            del ficplt1converter  # Free converter
 
             # run stics
             bs = os.path.join(Path(__file__).parent, "sticsrun.sh")
             try:
-                result = subprocess.run(["bash", bs, usmdir, directoryPath, str(dt)],capture_output=True, check=True, text=True, timeout=180)
+                result = subprocess.run(
+                    ["bash", bs, usmdir, tempDir, str(dt), str(dailyoutput)],
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                    timeout=180,
+                )
             except subprocess.TimeoutExpired as e:
                 print(f"⏰ STICS run timed out for {usmdir}. Killing...")
                 # Forcefully terminate the process if it hangs
@@ -964,28 +1059,153 @@ def process_chunk(*args):
                 pass  # Add cleanup logic if needed
 
             # get the file "mod_rapport.sti" in the usmdir directory
-            mod_r = os.path.join(directoryPath, f"mod_rapport_{str(row['idsim'])}.sti") 
+            mod_r = os.path.join(tempDir, f"mod_rapport_{str(row['idsim'])}.sti") 
             if not os.path.exists(mod_r):
                 print(f"Warning: {mod_r} does not exist")
                 continue
-            df = create_df_summary(mod_r)
+            df = create_df_summary(mod_r, dt)
             dataframes.append(df)
-            if dt==1: os.remove(mod_r)
-            
+
+            if dailyoutput == 1:
+                daily_file = os.path.join(tempDir, f"mod_s_{row['idsim']}.sti")
+                profile_file = os.path.join(tempDir, f"mod_profil_{row['idsim']}.sti")
+                if os.path.exists(daily_file) and os.path.exists(profile_file):
+                    daily_dataframes.append(create_df_daily(daily_file, row["idsim"]))
+                    profile_dataframes.append(create_df_profile(profile_file, row["idsim"]))
+                    os.remove(daily_file)
+                    os.remove(profile_file)
+                else:
+                    print(
+                        f"Warning: daily STICS outputs missing for {row['idsim']}",
+                        flush=True,
+                    )
+
+
+            mem_peak_before = proc.memory_info().rss / 1024**2
+ 
+            if len(dataframes) >= 15000:  # Write to CSV every 5000 dataframes
+                mem_peak_before = proc.memory_info().rss / 1024**2
+                batch_df = pd.concat(dataframes, ignore_index=True)
+                batch_df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
+                df_total_mb = sum(df.memory_usage(deep=True).sum() for df in dataframes) / 1024**2
+                mem_peak_after = proc.memory_info().rss / 1024**2
+ 
+                print(f"Chunk {idx} - {len(dataframes)} DataFrames: "
+                  f"DataFrame size={df_total_mb:.1f}MB, "
+                  f"mem_peak_before RAM={mem_peak_before:.1f}MB, "
+                  f"mem_peak_after RAM={mem_peak_after:.1f}MB, ",
+                  flush=True)
+                del batch_df  # Free the batch dataframe
+                del dataframes[:]  # Clear the list of dataframes
+                gc.collect()  # Force garbage collection to free memory
+            if daily_dataframes:
+                daily_batch = pd.concat(daily_dataframes, ignore_index=True)
+                daily_batch.to_csv(
+                    tmp_daily_csv,
+                    mode="a",
+                    header=not os.path.exists(tmp_daily_csv),
+                    index=False,
+                )
+                del daily_batch
+                del daily_dataframes[:]
+            if profile_dataframes:
+                profile_batch = pd.concat(profile_dataframes, ignore_index=True)
+                profile_batch.to_csv(
+                    tmp_profile_csv,
+                    mode="a",
+                    header=not os.path.exists(tmp_profile_csv),
+                    index=False,
+                )
+                del profile_batch
+                del profile_dataframes[:]
+            os.remove(mod_r)
+     
         except Exception as ex:
             print("Error during Running STICS  :", ex)
             traceback.print_exc()
             raise
-    if not dataframes:
+
+    if dataframes:
+        batch_df = pd.concat(dataframes, ignore_index=True)
+        batch_df.to_csv(tmp_csv, mode='a', header=(not os.path.exists(tmp_csv)), index=False)
+        del batch_df
+        del dataframes[:]
+        gc.collect() 
+
+    if daily_dataframes:
+        daily_batch = pd.concat(daily_dataframes, ignore_index=True)
+        daily_batch.to_csv(
+            tmp_daily_csv,
+            mode="a",
+            header=not os.path.exists(tmp_daily_csv),
+            index=False,
+        )
+        del daily_batch
+        del daily_dataframes[:]
+        gc.collect()
+
+    if profile_dataframes:
+        profile_batch = pd.concat(profile_dataframes, ignore_index=True)
+        profile_batch.to_csv(
+            tmp_profile_csv,
+            mode="a",
+            header=not os.path.exists(tmp_profile_csv),
+            index=False,
+        )
+        del profile_batch
+        del profile_dataframes[:]
+        gc.collect()
+    
+    if not os.path.exists(tmp_csv):
         print("No dataframes to concatenate.")
         ModelDictionary_Connection.close()
         MasterInput_Connection.close()
-        return pd.DataFrame()
+        # Clear all caches
+        weathertable.clear()
+        soiltable.clear()
+        tempopar.clear()
+        tectable.clear()
+        initable.clear()
+        return None
 
     # close connections
     ModelDictionary_Connection.close()
     MasterInput_Connection.close()
-    return pd.concat(dataframes, ignore_index=True)
+    
+    # Clear all caches before concatenation
+    weathertable.clear()
+    soiltable.clear()
+    tempopar.clear()
+    tectable.clear()
+    initable.clear()
+    
+    # Concatenate in batches to reduce memory usage
+    '''batch_size = 2000
+    if len(dataframes) <= batch_size:
+        result = pd.concat(dataframes, ignore_index=True)
+        del dataframes  # Free the list
+        return result
+    
+    result = pd.DataFrame()
+    batches = []
+    for i in range(0, len(dataframes), batch_size):
+        batches 
+        batch = dataframes[i:i+batch_size]
+        batch_concat = pd.concat(batch, ignore_index=True)
+        result = pd.concat([result, batch_concat], ignore_index=True)
+        # Clear the batch to free memory
+        del batch
+        del batch_concat'''
+    
+    #del dataframes  # Free the list
+    gc.collect()
+    mem_after = proc.memory_info().rss / 1024**2
+    print(f"Worker {os.getpid()} - mémoire: {mem_before:.0f}MB → {mem_after:.0f}MB (delta: {mem_after-mem_before:.0f}MB)", flush=True)
+    return (
+        tmp_csv,
+        tmp_daily_csv if os.path.exists(tmp_daily_csv) else None,
+        tmp_profile_csv if os.path.exists(tmp_profile_csv) else None,
+    )
             
 def export(MasterInput, ModelDictionary):
     MasterInput_Connection = sqlite3.connect(MasterInput)
@@ -1050,48 +1270,221 @@ def chunk_data(data, parts, chunk_size):    # values, num_sublists
     sublists = [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(parts * chunk_size)]
     return sublists
 
-def main():
-    mi= GlobalVariables["dbMasterInput"]
-    md = GlobalVariables["dbModelsDictionary"]
-    directoryPath = GlobalVariables["directorypath"]
-    pltfolder = GlobalVariables["pltfolder"]
-    nthreads = GlobalVariables["nthreads"]
-    dt = GlobalVariables["dt"]
-    parts = GlobalVariables["parts"]
+def process_chunk_safe(idx, args):
+    try:
+        chunk_df = process_chunk(*args)
+        return idx, chunk_df, None
+    except Exception:
+        return idx, None, traceback.format_exc()
     
+    
+def main():
+    import gc
+    import psutil
+    from glob import glob
+    import uuid
+    proc = psutil.Process(os.getpid())
+    
+    mi = GlobalVariables.get("dbMasterInput")
+    md = GlobalVariables.get("dbModelsDictionary")
+    directoryPath = GlobalVariables.get("directorypath", os.getcwd())
+    pltfolder = GlobalVariables.get("pltfolder")
+    nthreads = GlobalVariables.get("nthreads", 4)
+    dt = GlobalVariables.get("dt", 1)
+    parts = GlobalVariables.get("parts", 1)
+    tempDir = GlobalVariables.get("tempDir")
+    package = GlobalVariables.get("package")
+    resume_stics = GlobalVariables.get("resume_stics", 0)
+    dailyoutput = int(GlobalVariables.get("dailyoutput", 0))
+
+    if not mi or not md:
+        raise ValueError("dbMasterInput and dbModelsDictionary must be set in GlobalVariables")
+
+    os.makedirs(directoryPath, exist_ok=True)
+    os.makedirs(tempDir, exist_ok=True)
+    
+    stics_params = os.path.join(package, "data", "stics_params")
+    if not os.path.exists(stics_params):
+        rap = common_rap()
+        var = common_var()
+        prof = common_prof()
+    else:
+        rapfile = os.path.join(stics_params, "rap.mod")
+        with open(rapfile, "r") as f:
+            rap = f.read()
+        varfile = os.path.join(stics_params, "var.mod")
+        with open(varfile, "r") as f:
+            var = f.read()
+        proffile = os.path.join(stics_params, "prof.mod")
+        with open(proffile, "r") as f:
+            prof = f.read()
     export(mi, md)
+
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
-    rap = common_rap()
-    var = common_var()
-    prof = common_prof()
+
     data = fetch_data_from_sqlite(mi)
-    # Split data into chunks
-    chunks = chunk_data(data, parts, chunk_size=nthreads)
-    # Create a Pool of worker processes
-    import uuid
-    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt) for chunk in chunks]
-    # create a random name
-    result_name = str(uuid.uuid4()) + "_stics"
-    result_path = os.path.join(directoryPath, f"{result_name}.csv")
-    while os.path.exists(result_path):
+    
+    if resume_stics == 1:
+        result_path = glob(os.path.join(directoryPath, "*_stics.csv"))
+        if result_path:
+            result_path = result_path[0]
+            completed = set()
+            print(f"Resuming from existing result file: {result_path}", flush=True)
+            for chunk in pd.read_csv(result_path, usecols=["Idsim"], chunksize=200000):
+                completed.update(chunk["Idsim"].astype(str).unique())
+            data = [row for row in data if row['Idsim'] not in completed]
+            print(f"Remaining simulations to process: {len(data)}", flush=True)
+    else:
+        # create a random name
         result_name = str(uuid.uuid4()) + "_stics"
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
+        while os.path.exists(result_path):
+            result_name = str(uuid.uuid4()) + "_stics"
+            result_path = os.path.join(directoryPath, f"{result_name}.csv")
+        
+    # Split data into chunks
+    chunks = chunk_data(data, parts, chunk_size=nthreads)
+    n_simulations = len(data)
+    print(f"📊 Total simulations to process: {len(data)}", flush=True)
+    del data  # Free original data list after chunking
+    # Create a Pool of worker processes
+    args_list = [(chunk,mi, md, tpv6,tppar,directoryPath,pltfolder, rap, var, prof, dt, tempDir, idx, dailyoutput) for idx, chunk in enumerate(chunks)]
+    del chunks  # Free chunks list after creating args_list
+    gc.collect()
+
     try:
         start = time()
-        processed_data_chunks = []
-        """with ThreadPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))
-            with concurrent.futures.ProcessPoolExecutor(max_workers=nthreads) as executor:
-            processed_data_chunks = list(executor.map(process_chunk,args_list))"""
         
-        with parallel_backend("loky", n_jobs=nthreads):
-            processed_data_chunks = Parallel()(
-                delayed(process_chunk)(*args) for args in args_list
-            )
-        processed_data = pd.concat(processed_data_chunks, ignore_index=True)
-        processed_data.to_csv(os.path.join(directoryPath, f"{result_name}.csv"), index=False)
-        print(f"STICS total time, {time()-start}")
+        # Use joblib Parallel with loky backend, write results directly to final file
+        print(f"Processing {len(args_list)} chunks...", flush=True)
+        
+        write_header = True
+        total_chunks_written = 0
+        daily_table_initialized = False
+        profile_table_initialized = False
+        if dailyoutput == 1 and resume_stics == 1:
+            with sqlite3.connect(mi) as daily_conn:
+                daily_table_initialized = daily_conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (DAILY_OUTPUT_TABLE,),
+                ).fetchone() is not None
+                profile_table_initialized = daily_conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                    (PROFILE_OUTPUT_TABLE,),
+                ).fetchone() is not None
+        
+        print(f"Using chunked processing for {n_simulations} simulations", flush=True)            
+        results = Parallel(
+                n_jobs=nthreads,
+                backend="loky",
+                return_as="generator_unordered",
+                batch_size="auto"
+            )(
+                delayed(process_chunk_safe)(i, args)
+                for i, args in enumerate(args_list)
+            )        
+
+        for idx, chunk_paths, error in results:
+            if error is not None:
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
+
+            if chunk_paths is None:
+                print(f"❌ Chunk {idx + 1}/{len(args_list)} failed:\n{error}", flush=True)
+                continue
+
+            tmp_path, tmp_daily_path, tmp_profile_path = chunk_paths
+            if not os.path.exists(tmp_path):
+                print(f"❌ Summary output is missing for chunk {idx + 1}", flush=True)
+                continue
+                
+            if os.path.exists(tmp_path):
+                mem_peak_before2 = proc.memory_info().rss / 1024**2
+                df = pd.read_csv(tmp_path)
+                df.to_csv(result_path, mode="a", header=write_header, index=False)
+                write_header = False
+                total_chunks_written += 1
+
+                print(
+                        f"✅ Chunk {idx + 1}/{len(args_list)}: "
+                        f"{len(df)} rows written",
+                        flush=True
+                )
+                os.remove(tmp_path)  # Clean up temporary chunk file
+                del df
+                gc.collect()
+                mem_peak_after = proc.memory_info().rss / 1024**2
+                print(f"Worker {os.getpid()} - mémoire: {mem_peak_before2:.0f}MB → {mem_peak_after:.0f}MB (delta: {mem_peak_after-mem_peak_before2:.0f}MB)", flush=True)
+
+            if dailyoutput == 1 and tmp_daily_path and os.path.exists(tmp_daily_path):
+                with sqlite3.connect(mi) as daily_conn:
+                    for daily_chunk in pd.read_csv(tmp_daily_path, chunksize=50000):
+                        daily_chunk.to_sql(
+                            DAILY_OUTPUT_TABLE,
+                            daily_conn,
+                            if_exists="append" if daily_table_initialized else "replace",
+                            index=False,
+                        )
+                        daily_table_initialized = True
+                os.remove(tmp_daily_path)
+
+            if dailyoutput == 1 and tmp_profile_path and os.path.exists(tmp_profile_path):
+                with sqlite3.connect(mi) as profile_conn:
+                    for profile_chunk in pd.read_csv(tmp_profile_path, chunksize=50000):
+                        profile_chunk.to_sql(
+                            PROFILE_OUTPUT_TABLE,
+                            profile_conn,
+                            if_exists="append" if profile_table_initialized else "replace",
+                            index=False,
+                        )
+                        profile_table_initialized = True
+                os.remove(tmp_profile_path)
+            
+            if total_chunks_written == 0:
+                print("No data to process.")
+                return
+        
+        print(f"✅ Results saved to {result_path}")
+        if dailyoutput == 1:
+            if daily_table_initialized:
+                with sqlite3.connect(mi) as daily_conn:
+                    daily_conn.execute(
+                        f'CREATE INDEX IF NOT EXISTS "idx_{DAILY_OUTPUT_TABLE}_idsim_jul" '
+                        f'ON "{DAILY_OUTPUT_TABLE}" ("Idsim", "jul")'
+                    )
+                print(f"✅ Daily results inserted into {DAILY_OUTPUT_TABLE}.", flush=True)
+            else:
+                print("Warning: no daily STICS results were imported.", flush=True)
+            if profile_table_initialized:
+                with sqlite3.connect(mi) as profile_conn:
+                    profile_conn.execute(
+                        f'CREATE INDEX IF NOT EXISTS "idx_{PROFILE_OUTPUT_TABLE}_idsim_jul_depth" '
+                        f'ON "{PROFILE_OUTPUT_TABLE}" ("Idsim", "jul", "depth_cm")'
+                    )
+                print(f"✅ Profile results inserted into {PROFILE_OUTPUT_TABLE}.", flush=True)
+            else:
+                print("Warning: no STICS profile results were imported.", flush=True)
+        print(f"STICS total time: {time()-start:.2f}s", flush=True)
+
+        if dt == 0:
+            summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
+                            "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac", "SoilN",
+                            "CroN_ma", "CumE", "Transp"]
+            df_result = pd.read_csv(result_path, usecols=lambda c: c in summary_cols)
+            for col in summary_cols:
+                if col not in df_result.columns:
+                    df_result[col] = None
+            df_result = df_result[summary_cols]
+            _conn = sqlite3.connect(mi)
+            _conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Stics'")
+            _conn.commit()
+            df_result.to_sql("SummaryOutput", _conn, if_exists="append", index=False)
+            _conn.commit()
+            _conn.close()
+            print(f"✅ {len(df_result)} rows inserted into SummaryOutput.", flush=True)
+            del df_result
+
     except Exception as ex:  
         print("Error during processing:", ex)
         traceback.print_exc() 

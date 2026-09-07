@@ -1,0 +1,9 @@
+[weather.met.weather]
+latitude = 45.0
+longitude = -93.0
+Station: Site5
+year  day  radn  maxt  mint  rain   vp  pan   code
+ ()   ()  (MJ/m^2) (oC) (oC)  (mm) (hPa)  (mm)    ()
+2020   1   10.0  25.0  15.0   0.0  18.0   3.0 999999
+2020   2   12.0  26.0  16.0   5.0  20.0   3.5 999999
+2020   3   15.0  28.0  17.0   0.0  22.0   4.0 999999

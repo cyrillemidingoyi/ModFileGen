@@ -1,0 +1,17 @@
+include README.rst
+include HISTORY.rst
+include LICENSE
+include CITATION.cff
+include requirements.txt
+include pyproject.toml
+recursive-include src/modfilegen *.json
+recursive-include src/modfilegen *.xml
+recursive-include src/modfilegen *.ini
+recursive-include src/modfilegen *.sh
+recursive-include src/modfilegen *.shp
+recursive-include data *
+recursive-exclude tests *
+recursive-exclude .github *
+recursive-exclude docs *
+exclude .gitignore
+exclude .gitlab-ci.yml

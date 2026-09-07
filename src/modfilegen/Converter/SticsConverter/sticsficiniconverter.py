@@ -116,8 +116,22 @@ class SticsFicIniConverter(Converter):
                 file_lines.append(" ".join(no3_vals))
 
             file_lines.append(":NH4init:")
-            #rw = DT[DT["Champ"] == "NH4initf"]
-            file_lines.append(f"{defaults['NH4initf']} 0.0 0.0 0.0 0.0")
+            has_row_nh4 = "NH4initf" in row and pd.notna(row["NH4initf"])
+            default_nh4 = float(defaults["NH4initf"])
+            if row["SoilOption"].lower() == "simple":
+                nh4_value = float(row["NH4initf"]) if has_row_nh4 else default_nh4
+                file_lines.append(f"{nh4_value:.1f} 0.0 0.0 0.0 0.0")
+            else:
+                nh4_vals = []
+                for i in range(5):
+                    if i < len(jeu):
+                        if has_row_nh4 and len(jeu) > 0:
+                            nh4_vals.append(f"{float(row['NH4initf']) / len(jeu):.1f}")
+                        else:
+                            nh4_vals.append(f"{default_nh4:.1f}")
+                    else:
+                        nh4_vals.append("0.0")
+                file_lines.append(" ".join(nh4_vals))
             #fileContent += rw["dv"].values[0] + " 0.0 0.0 0.0 0.0" + "\n"
         #fileContent += "\n"
         file_lines.append("")

@@ -69,6 +69,12 @@ class DssatSoilConverter(Converter):
             fileContent += v_fmt["SMKE"].format(Dv)+ "\n"
             fileContent += "@  SLB  SLMH  SLLL  SDUL  SSAT  SRGF  SSKS  SBDM  SLOC  SLCL  SLSI  SLCF  SLNI  SLHW  SLHB  SCEC  SADC" +"\n"
             
+            soil_layer_columns = {
+                item[1].lower()
+                for item in master_input_connection.execute("PRAGMA table_info(SoilLayers)")
+            }
+            sat_expression = "SoilLayers.Sat" if "sat" in soil_layer_columns else "NULL"
+            ksat_expression = "SoilLayers.Ksat" if "ksat" in soil_layer_columns else "NULL"
             fetchAllQuery1 = """Select Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd AS 'Soil.bd', Soil.OrganicC AS 'Soil.OrganicC', 
                                         Soil.Cf AS 'Soil.Cf', Soil.pH AS 'Soil.pH', Soil.extp AS 'Soil.extp', Soil.totp AS 'Soil.totp', 
                                         Soil.sand AS 'Soil.sand', Soil.clay AS 'Soil.clay', Soil.silt AS 'Soil.silt',
@@ -77,8 +83,13 @@ class DssatSoilConverter(Converter):
                                         SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', 
                                         SoilLayers.bd AS 'SoilLayers.bd', SoilLayers.OrganicC AS 'SoilLayers.OrganicC', 
                                         SoilLayers.Clay AS 'SoilLayers.Clay', SoilLayers.Silt AS 'SoilLayers.Silt', 
-                                        SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH', 
+                                        SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH',
+                                        {sat_expression} AS 'SoilLayers.Sat', {ksat_expression} AS 'SoilLayers.Ksat',
                                         SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN' FROM SOIL LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = '%s' ;"""%(idSoil.lower())
+            fetchAllQuery1 = fetchAllQuery1.format(
+                sat_expression=sat_expression,
+                ksat_expression=ksat_expression,
+            )
             DA1 = pd.read_sql_query(fetchAllQuery1, master_input_connection)
             rows1 = DA1.to_dict(orient='records')
             if rows1[0]["SoilOption"] == "simple":
@@ -94,7 +105,8 @@ class DssatSoilConverter(Converter):
                     fileContent += v_fmt["SDUL"].format(rows1[0]["Soil.Wfc"] / 100)
                     rw = DT[DT["Champ"] == "ssat"]
                     Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SSAT"].format(float(Dv))
+                    #fileContent += v_fmt["SSAT"].format(float(Dv))
+                    fileContent += v_fmt["SSAT"].format(rows1[0]["Soil.Wfc"] * 1.01 / 100)
                     rw = DT[DT["Champ"] == "srgf"]
                     Dv = rw["dv"].values[0]
                     fileContent += v_fmt["SRGF"].format(float(Dv))
@@ -137,15 +149,21 @@ class DssatSoilConverter(Converter):
                     fileContent += v_fmt["SLMH"].format(Dv)
                     fileContent += v_fmt["SLLL"].format(row1["SoilLayers.Wwp"] / 100)
                     fileContent += v_fmt["SDUL"].format(row1["SoilLayers.Wfc"] / 100)
-                    rw = DT[DT["Champ"] == "ssat"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SSAT"].format(float(Dv))
+                    measured_sat = row1["SoilLayers.Sat"]
+                    if pd.notna(measured_sat):
+                        fileContent += v_fmt["SSAT"].format(measured_sat / 100)
+                    else:
+                        fileContent += v_fmt["SSAT"].format(row1["SoilLayers.Wfc"] * 1.01 / 100)
                     rw = DT[DT["Champ"] == "srgf"]
                     Dv = rw["dv"].values[0]
                     fileContent += v_fmt["SRGF"].format(float(Dv))
-                    rw = DT[DT["Champ"] == "ssks"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SSKS"].format(float(Dv))
+                    measured_ksat = row1["SoilLayers.Ksat"]
+                    if pd.notna(measured_ksat):
+                        fileContent += v_fmt["SSKS"].format(measured_ksat)
+                    else:
+                        rw = DT[DT["Champ"] == "ssks"]
+                        Dv = rw["dv"].values[0]
+                        fileContent += v_fmt["SSKS"].format(float(Dv))
                     fileContent += v_fmt["SBDM"].format(row1["SoilLayers.bd"])
                     fileContent += v_fmt["SLOC"].format(row1["SoilLayers.OrganicC"])
                     fileContent += v_fmt["SLCL"].format(row1["SoilLayers.Clay"])
@@ -265,4 +283,3 @@ v_fmt = {
         "WCRES": "{:6.3f}",
         "SCS Family": " {:}"
     }
-

@@ -145,13 +145,26 @@ v_fmt_simulation = {"N" : "{:2.0f}", "GENERAL" : " {:<11s}", "NYERS" : "{:6.0f}"
 v_fmt_tillage = {"T" : "{:2.0f}", "TDATE" : "{:>6s}", "TIMPL" : "{:>6s}", "TDEP" : "{:6.0f}", "TNAME" : " {:<s}"}
 
 
+def is_leap_year(year):
+    return year % 4 == 0
+
+
+def format_dssat_yyddd(start_year, day):
+    year = int(start_year)
+    day = int(day)
+    while day > 365 + is_leap_year(year):
+        day -= 365 + is_leap_year(year)
+        year += 1
+    return str(year)[2:4] + str(day).rjust(3, "0")
+
+
 
 
 
 def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
     fileContent = ""
     
-    fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.NumTillOperations, OrganicFertilizationPolicy.NumOrganicFerti, CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
+    fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.SoilTillPolicyCode, OrganicFertilizationPolicy.OFertiPolicyCode, CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
         From OrganicFertilizationPolicy INNER Join (SoilTillPolicy INNER Join (CropManagement INNER Join SimUnitList 
         On CropManagement.idMangt = SimUnitList.idMangt) ON SoilTillPolicy.SoilTillPolicyCode = CropManagement.SoilTillPolicyCode) 
         ON OrganicFertilizationPolicy.OFertiPolicyCode = CropManagement.OFertiPolicyCode Where IdSim='%s'""" % (idSim)
@@ -197,18 +210,18 @@ def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, mast
     #rw = DT[DT["Champ"] == "LNIR"]  ######################### It depends on the context
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_treat["MI"].format(float(Dv))
-    if int(dataTable["IrrigationPolicyCode"].values[0]) == 0:
+    if dataTable["IrrigationPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MI"].format(0)
     else:
         fileContent += v_fmt_treat["MI"].format(1)
     #rw = DT[DT["Champ"] == "LNFER"] ######################### It depends on the context
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_treat["MF"].format(float(Dv))
-    if int(dataTable["InoFertiPolicyCode"].values[0]) == 0:
+    if dataTable["InoFertiPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MF"].format(0)
     else:
         fileContent += v_fmt_treat["MF"].format(1)
-    if int(dataTable["NumOrganicFerti"].values[0]) == 0:
+    if dataTable["OFertiPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MR"].format(0)
     else:
         fileContent += v_fmt_treat["MR"].format(1)
@@ -216,7 +229,7 @@ def writeBlockTreatment(dssat_tableName, idSim, modelDictionary_Connection, mast
     #Dv = rw["dv"].values[0]
     #fileContent += v_fmt_treat["MC"].format(float(Dv))
     fileContent += v_fmt_treat["MC"].format(0)
-    if int(dataTable["NumTillOperations"].values[0]) == 0:
+    if dataTable["SoilTillPolicyCode"].values[0] == "0":
         fileContent += v_fmt_treat["MT"].format(0)
     else:
         fileContent += v_fmt_treat["MT"].format(1)
@@ -270,7 +283,7 @@ def writeBlockField(dssat_tableName, dssat_tableId, idMangt, modelDictionary_Con
     rw = DT[DT["Champ"] == "ID_FIELD"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_fields["ID_FIELD"].format(Dv)
-    fileContent += v_fmt_fields["WSTA"].format(idMangt[0:4])
+    fileContent += v_fmt_fields["WSTA"].format(idMangt[0:4].upper())
     rw = DT[DT["Champ"] == "FLSA"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_fields["FLSA"].format(Dv)
@@ -475,7 +488,7 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
     dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, Connection)
     siteColumnsHeader = "@C  ICBL  SH2O  SNH4  SNO3"
-    fetchAllQuery  = """SELECT DISTINCT Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', soil.bd as 'soil.bd', Soil.*,
+    fetchAllQuery  = """SELECT DISTINCT Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd as 'soil.bd', Soil.*,
                 SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', SoilLayers.*, 
                 InitialConditions.* FROM InitialConditions INNER JOIN 
                 ((Soil INNER JOIN SimUnitList ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)) LEFT JOIN SoilLayers ON Lower(Soil.IdSoil) = Lower(SoilLayers.idsoil))
@@ -483,6 +496,7 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
     dataTable = pd.read_sql_query(fetchAllQuery, MI_Connection)
     fileContent = ""
     fileContent += siteColumnsHeader + "\n"
+    has_nh4initf = "NH4initf" in dataTable.columns
     if dataTable["SoilOption"].values[0].lower() == "simple":
         for i in range(2):
             rw = DT[DT["Champ"] == "LNIC"]
@@ -495,7 +509,11 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             fileContent += v_fmt_init["SH2O"].format((dataTable["Soil.Wwp"].values[0] / 100) + dataTable["WStockinit"].values[0] * (dataTable["Soil.Wfc"].values[0] - dataTable["Soil.Wwp"].values[0]) / 10000)
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
-            fileContent += v_fmt_init["SNH4"].format(float(Dv))
+            # fileContent.Append(FormatNumber(10 * dataTable.Rows(0).Item("NH4init") / (dataTable.Rows(0).Item("soil.bd") * dataTable.Rows(0).Item("SoilTotalDepth")), 2).ToString.PadLeft(5))
+            if has_nh4initf and pd.notna(dataTable["NH4initf"].values[0]):
+                fileContent += v_fmt_init["SNH4"].format(10 * dataTable["NH4initf"].values[0] / (dataTable["soil.bd"].values[0] * dataTable["SoilTotalDepth"].values[0]))
+            else:
+                fileContent += v_fmt_init["SNH4"].format(float(Dv))
             fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[0] / (dataTable["soil.bd"].values[0] * dataTable["SoilTotalDepth"].values[0]))
             fileContent += "\n"
     else:
@@ -507,8 +525,11 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             fileContent += v_fmt_init["SH2O"].format((dataTable["SoilLayers.Wwp"].values[i] / 100 + dataTable["WStockinit"].values[i] * (dataTable["SoilLayers.Wfc"].values[i] - dataTable["SoilLayers.Wwp"].values[i]) / 10000))
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
-            fileContent += v_fmt_init["SNH4"].format(float(Dv))
-            fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilLayers.Depth"].values[i]), ".2f").rjust(5)
+            if has_nh4initf and pd.notna(dataTable["NH4initf"].values[i]):
+                fileContent += v_fmt_init["SNH4"].format(10 * dataTable["NH4initf"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilTotalDepth"].values[i]))
+            else:
+                fileContent += v_fmt_init["SNH4"].format(float(Dv))
+            fileContent += v_fmt_init["SNO3"].format(10 * dataTable["Ninit"].values[i] / (dataTable["soil.bd"].values[i] * dataTable["SoilTotalDepth"].values[i]), ".2f").rjust(5)
             fileContent += "\n"
     return fileContent
     
@@ -658,14 +679,8 @@ def writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, mas
         fileContent += v_fmt_fertilizers["F"].format(float(Dv))
         ifert = int(dataTable["sowingdate"].values[i] + dataTable["Dferti"].values[i])
         if dataTable["Dferti"].values[i] == 0: ifert += 1
-        if dataTable["StartYear"].values[i] % 4 == 0:
-            Bissext = 1
-        else:
-            Bissext = 0
-        if ifert > 365 + Bissext and Dv_ferti != "D":
-            fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i] + 1)[2:4] + str(ifert - 365 - Bissext).rjust(3, "0"))
-        elif ifert <= 365 + Bissext and Dv_ferti != "D":
-            fileContent += v_fmt_fertilizers["FDATE"].format(str(dataTable["StartYear"].values[i])[2:4] + str(ifert).rjust(3, "0"))
+        if Dv_ferti != "D":
+            fileContent += v_fmt_fertilizers["FDATE"].format(format_dssat_yyddd(dataTable["StartYear"].values[i], ifert))
         elif Dv_ferti == "D":
             fileContent += v_fmt_fertilizers["FDATE"].format(str(int(dataTable["Dferti"].values[i])))
         
@@ -721,14 +736,7 @@ def writeBlockResidues(dssat_tableName, idSim, dssat_tableId, modelDictionary_Co
         fileContent += v_fmt_residues["R"].format(float(Dv))
         ifert = int(dataTable["sowingdate"].values[i] + dataTable["Dferti"].values[i])
         if dataTable["Dferti"].values[i] == 0: ifert += 1
-        if dataTable["StartYear"].values[i] % 4 == 0:
-            Bissext = 1
-        else:
-            Bissext = 0
-        if ifert > 365 + Bissext:
-            fileContent += v_fmt_residues["RDATE"].format(str(dataTable["StartYear"].values[i] + 1)[2:4] + str(ifert - 365 - Bissext).rjust(3, "0"))
-        else:
-            fileContent += v_fmt_residues["RDATE"].format(str(dataTable["StartYear"].values[i])[2:4] + str(ifert).rjust(3, "0"))
+        fileContent += v_fmt_residues["RDATE"].format(format_dssat_yyddd(dataTable["StartYear"].values[i], ifert))
         if dataTable["idresidueDssat"].values : fileContent += v_fmt_residues["RCOD"].format(dataTable["idresidueDssat"].values[i])
         else: fileContent += format(" ", "6s")
         fileContent += v_fmt_residues["RAMT"].format(dataTable["Qmanure"].values[i])
@@ -915,14 +923,8 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
     
     iharv = int(dataTable["sowingdate"].values[0] + dataTable["DHarvest"].values[0])
     if dataTable["DHarvest"].values[0] == 0: iharv+= 1
-    if dataTable["StartYear"].values[0] % 4 == 0:
-        Bissext = 1
-    else:
-        Bissext = 0
-    if iharv > 365 + Bissext and Dv_hari != "D":
-        fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["StartYear"].values[0] + 1)[2:4] + str(iharv - 365 - Bissext).rjust(3, "0"))
-    elif iharv <= 365 + Bissext and Dv_hari != "D":
-        fileContent += v_fmt_harvest["HDATE"].format(str(dataTable["StartYear"].values[0])[2:4] + str(iharv).rjust(3, "0"))
+    if Dv_hari != "D":
+        fileContent += v_fmt_harvest["HDATE"].format(format_dssat_yyddd(dataTable["StartYear"].values[0], iharv))
     elif Dv_hari == "D":
         fileContent += v_fmt_harvest["HDATE"].format(str(int(dataTable["DHarvest"].values[0])))
 
@@ -952,7 +954,7 @@ def writeBlockHarvest(dssat_tableName, idSim, dssat_tableId, modelDictionary_Con
 
 
 
-def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connection, dailyoutput):
     fileContent = ""
     storeKeyDataN = 0
     storeNumMaxSimu = 1
@@ -981,7 +983,7 @@ def writeBlockEndFile( idSim, modelDictionary_Connection, master_input_connectio
         dssat_tableName1 = "dssat_x_simulation_management"
         fileContent += writeBlockManagement(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
         dssat_tableName1 = "dssat_x_simulation_outputs"
-        fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection)
+        fileContent += writeBlockoutputs(dssat_tableName1, dssat_tableId1, idSim, modelDictionary_Connection, dailyoutput)
         fileContent += "\n"
         #z = 0
         if Dv_planting=="A" or Dv_irri=="A" or Dv_ferti=="A" or Dv_hari=="A" or Dv_resi=="A":
@@ -1037,10 +1039,10 @@ def writeBlockGeneral(dssat_tableName, dssat_tableId, idSim, modelDictionary_Con
     fileContent += v_fmt_simulation["RSEED"].format(int(Dv.strip()))
     rw = DT[DT["Champ"] == "TITSIM"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["SNAME"].format(Dv.strip())
-    rw = DT[DT["Champ"] == "CROP_MODE"]
-    Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["SMODEL"].format(Dv.strip()) + "\n"
+    fileContent += v_fmt_simulation["SNAME"].format(Dv.strip()) + "\n"
+    #rw = DT[DT["Champ"] == "CROP_MODE"]
+    #Dv = rw["dv"].values[0]
+    #fileContent += v_fmt_simulation["SMODEL"].format(Dv.strip()) + "\n"
     
     return fileContent
 
@@ -1168,8 +1170,9 @@ def writeBlockManagement(dssat_tableName, dssat_tableId, idSim, modelDictionary_
     
 
 
-def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection):
+def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Connection, dailyoutput):
     fileContent = ""
+    daily = "Y" if dailyoutput == 1 else "N"
     siteColumnsHeader = "@N OUTPUTS     FNAME OVVEW SUMRY FROPT GROUT CAOUT WAOUT NIOUT MIOUT DIOUT VBOSE CHOUT OPOUT"
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -1194,28 +1197,28 @@ def writeBlockoutputs(dssat_tableName, dssat_tableId, idSim, modelDictionary_Con
     fileContent += v_fmt_simulation["FROPT"].format(int(Dv))
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["GROUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["GROUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETC"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["CAOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["CAOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["WAOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["WAOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETN"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["NIOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["NIOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETP"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["MIOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["MIOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETD"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["DIOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["DIOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_simulation["VBOSE"].format("N")#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETC"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["CHOUT"].format("N")#format(Dv.strip())
+    fileContent += v_fmt_simulation["CHOUT"].format(daily)#format(Dv.strip())
     rw = DT[DT["Champ"] == "IDETG"]
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_simulation["OPOUT"].format(Dv.strip()) + "\n"
@@ -1300,7 +1303,7 @@ def writeBlockAutomaticIrrigation(dssat_tableName, dssat_tableId, idSim, modelDi
     fileContent += v_fmt_simulation["IRAMT"].format(int(Dv))
     rw = DT[DT["Champ"] == "EFFIRR"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["IREFF"].format(int(Dv)) + "\n"
+    fileContent += v_fmt_simulation["IREFF"].format(float(Dv)) + "\n"
     return fileContent
 
 
@@ -1418,14 +1421,14 @@ class DssatXConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop):
+    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dailyoutput, dssat_version="v47"):
         ST = directory_path.split(os.sep)
         idSim = ST[-2]
         idMangt = ST[-1]
         T = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],[Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] like 'dssat_x_%'));"
         DT = pd.read_sql_query(T, modelDictionary_Connection)
         
-        fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.NumTillOperations, OrganicFertilizationPolicy.NumOrganicFerti, 
+        fetchAllQuery  = """Select SimUnitList.idsim, SoilTillPolicy.SoilTillPolicyCode, OrganicFertilizationPolicy.OFertiPolicyCode, 
         CropManagement.IrrigationPolicyCode, CropManagement.InoFertiPolicyCode 
         From OrganicFertilizationPolicy INNER Join (SoilTillPolicy INNER Join (CropManagement INNER Join SimUnitList 
         On CropManagement.idMangt = SimUnitList.idMangt) ON SoilTillPolicy.SoilTillPolicyCode = CropManagement.SoilTillPolicyCode) 
@@ -1534,13 +1537,13 @@ class DssatXConverter(Converter):
         # Irrigation and water management
         dssat_tableName = "dssat_x_irrigation_water"
         dssat_tableId = "dssat_x_exp_id"
-        if int(rows[0]["IrrigationPolicyCode"]) == 0:
+        if rows[0]["IrrigationPolicyCode"] == "0":
             fileContent += "\n"
         else: fileContent += writeBlockIrrigationWater(dssat_tableName, dssat_tableId, modelDictionary_Connection)
         
         # Fertilizer
         dssat_tableName = "dssat_x_fertilizer"
-        if int(rows[0]["InoFertiPolicyCode"]) == 0:
+        if rows[0]["InoFertiPolicyCode"] == "0":
             fileContent += "\n"
         else: fileContent += writeBlockFertilizer(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection, Dv_ferti)
         
@@ -1572,7 +1575,7 @@ class DssatXConverter(Converter):
         # SIMULATION CONTROLS
         fileContent += "\n"
         fileContent += "*SIMULATION CONTROLS\n"
-        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection)
+        fileContent += writeBlockEndFile(idSim, modelDictionary_Connection, master_input_connection, dailyoutput)
         
         try:
             # Export file to specified directory
@@ -1582,11 +1585,22 @@ class DssatXConverter(Converter):
             print("Error during writing file")
             print(e)
             
-        #  Fichier DSSBatch.v47
+        batch_filenames = {
+            "v47": "DSSBatch.v47",
+            "v48": "DSSBatch.v48",
+        }
+        try:
+            batch_filename = batch_filenames[dssat_version]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported DSSAT version {dssat_version!r}; expected v47 or v48"
+            ) from exc
+
+        # Fichier DSSBatch correspondant à la version DSSAT sélectionnée
         dssat_tableName = "dssat_x_treatment"
         dssat_tableId = "dssat_x_exp_id"
         fileContent = writeBlockTreatment2(dssat_tableName, fileName, idSim, modelDictionary_Connection)
-        self.write_file(usmdir, "DSSBatch.v47", fileContent)
+        self.write_file(usmdir, batch_filename, fileContent)
         fileContent = ""
 
 
