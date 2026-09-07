@@ -144,9 +144,17 @@ def create_df_daily(output_files, idsim):
         )
     if daily is None:
         return pd.DataFrame()
-    daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True)
-    daily.insert(0, "Idsim", str(idsim))
-    daily.insert(0, "Model", "Dssat")
+    daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True).copy()
+    daily = pd.concat(
+        [
+            pd.DataFrame({
+                "Model": "Dssat",
+                "Idsim": str(idsim),
+            }, index=daily.index),
+            daily,
+        ],
+        axis=1,
+    )
     return daily
 
 
