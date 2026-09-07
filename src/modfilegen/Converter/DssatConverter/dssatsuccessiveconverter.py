@@ -258,6 +258,18 @@ def section_has_data(sections, section):
     return section in sections and bool(data_lines(sections[section]))
 
 
+def policy_code_enabled(value):
+    """Return whether a management policy identifier selects a policy.
+
+    Policy identifiers are commonly textual foreign keys (for example
+    ``MA_IA55``), while legacy databases may use the numeric sentinel 0.
+    """
+    if value is None:
+        return False
+    text = str(value).strip()
+    return bool(text) and text not in {"0", "0.0"}
+
+
 def query_one(connection, sql):
     dataframe = pd.read_sql_query(sql, connection)
     if dataframe.empty:
@@ -453,8 +465,14 @@ def treatment_line(rotation, model_dictionary_connection, master_input_connectio
         "SA": 1 if section_has_data(sections, "*SOIL") else 0,
         "IC": 1 if rotation.index == 1 else 0,
         "MP": rotation.index,
-        "MI": rotation.index if int(flags["IrrigationPolicyCode"]) != 0 and section_has_data(sections, "*IRRIGATION") else 0,
-        "MF": rotation.index if int(flags["InoFertiPolicyCode"]) != 0 and section_has_data(sections, "*FERTILIZERS") else 0,
+        "MI": rotation.index
+        if policy_code_enabled(flags["IrrigationPolicyCode"])
+        and section_has_data(sections, "*IRRIGATION")
+        else 0,
+        "MF": rotation.index
+        if policy_code_enabled(flags["InoFertiPolicyCode"])
+        and section_has_data(sections, "*FERTILIZERS")
+        else 0,
         "MR": rotation.index if int(flags["NumOrganicFerti"]) != 0 and section_has_data(sections, "*RESIDUES") else 0,
         "MC": 0,
         "MT": rotation.index if int(flags["NumTillOperations"]) != 0 and section_has_data(sections, "*TILLAGE") else 0,
