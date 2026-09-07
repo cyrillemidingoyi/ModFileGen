@@ -1303,7 +1303,7 @@ def writeBlockAutomaticIrrigation(dssat_tableName, dssat_tableId, idSim, modelDi
     fileContent += v_fmt_simulation["IRAMT"].format(int(Dv))
     rw = DT[DT["Champ"] == "EFFIRR"]
     Dv = rw["dv"].values[0]
-    fileContent += v_fmt_simulation["IREFF"].format(int(Dv)) + "\n"
+    fileContent += v_fmt_simulation["IREFF"].format(float(Dv)) + "\n"
     return fileContent
 
 
