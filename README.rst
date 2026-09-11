@@ -5,8 +5,8 @@ ModFileGen
    :target: https://modfilegen.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
 
-ModFileGen is a Python package designed to **generate and run model input files for different models** based on a standardized shared database.  
-It serves as a bridge between shared datasets and simulation-ready input files for crop models.
+ModFileGen is a Python package designed to **generate model-specific input files and run simulations using data from a standardized, shared database**. 
+It bridges shared datasets and simulation-ready inputs for crop models.
 
 Overview
 --------
@@ -175,6 +175,9 @@ Contributing
 
 Contributions are welcome! Please submit issues or pull requests via GitHub:
 `https://github.com/CropModelingPlatform/ModFileGen <https://github.com/CropModelingPlatform/ModFileGen>`_
+
+The current development backlog is maintained in `TODO.md <TODO.md>`_. Review
+it before starting a change and update it when completing one.
 
 License
 -------
