@@ -251,6 +251,70 @@ def set_section_date(sections, section, value):
         ]
 
 
+def date_from_yydoy(value, reference_year):
+    """Parse a DSSAT YYDDD date using the century nearest reference_year."""
+    text = str(value).strip()
+    if not re.fullmatch(r"\d{5}", text):
+        return None
+    year_in_century = int(text[:2])
+    day = int(text[2:])
+    century = (int(reference_year) // 100) * 100
+    years = (
+        century + year_in_century - 100,
+        century + year_in_century,
+        century + year_in_century + 100,
+    )
+    year = min(years, key=lambda candidate: abs(candidate - int(reference_year)))
+    if day < 1 or day > (julian_date(year + 1, 1) - julian_date(year, 1)).days:
+        return None
+    return julian_date(year, day)
+
+
+def shift_section_dates(sections, section, days, reference_year):
+    """Shift absolute YYDDD dates emitted by a legacy DSSAT block writer."""
+    if not days or section not in sections:
+        return
+    shifted = []
+    for line in sections[section]:
+        match = re.match(r"^(\s*\S+\s+)(\S+)(.*)$", line)
+        value = date_from_yydoy(match.group(2), reference_year) if match else None
+        # Values such as 00001 can be model sentinels rather than operation
+        # dates. Only move dates belonging to the legacy management window.
+        if value is None or abs(value.year - int(reference_year)) > 1:
+            shifted.append(line)
+            continue
+        shifted.append(
+            replace_second_token(
+                line, date_to_yydoy(value + timedelta(days=days))
+            )
+        )
+    sections[section] = shifted
+
+
+def apply_successive_management_dates(sections, simunit_row, season_row, management):
+    """Replace legacy standard-mode dates with successive calendar dates."""
+    planting = julian_date(
+        int(simunit_row["StartYear"]) + int(management["SowingYearOffset"]),
+        int(management["sowingdate"]),
+    )
+    legacy_planting = julian_date(
+        int(season_row["StartYear"]), int(management["sowingdate"])
+    )
+    shift_days = (planting - legacy_planting).days
+    for section in (
+        "*PLANTING",
+        "*IRRIGATION",
+        "*FERTILIZERS",
+        "*RESIDUES",
+        "*TILLAGE",
+    ):
+        shift_section_dates(
+            sections, section, shift_days, legacy_planting.year
+        )
+    # PDATE is authoritative even when a legacy writer emits an unusual value.
+    set_section_date(sections, "*PLANTING", date_to_yydoy(planting))
+
+
 def data_lines(lines):
     return [line for line in lines if line.strip() and not line.lstrip().startswith(("@", "*", "!", "$"))]
 
@@ -655,6 +719,7 @@ def generate_rotation_input(
     )
 
     sections = parse_sections(read_generated_xfile(single_dir))
+    apply_successive_management_dates(sections, row, season_row, management)
     set_section_date(
         sections, "*HARVEST", date_to_yydoy(row_end_date(season_row))
     )
