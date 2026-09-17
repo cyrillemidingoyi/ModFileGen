@@ -156,7 +156,11 @@ def fetch_rotation_seasons(connection, simulation):
     minimum_offset = min(season["PatternYearOffset"] for season in pattern)
     if minimum_offset < 0:
         raise ValueError(f"SeasonYearOffset cannot be negative; found {minimum_offset}")
-    pattern_years = max(season["PatternYearOffset"] for season in pattern) + 1
+    maximum_offset = max(season["PatternYearOffset"] for season in pattern)
+    # Offsets locate the pattern relative to StartYear; they do not add empty
+    # years to its repetition period.  A single season at offset 1 is an
+    # annual pattern whose first occurrence is simply in StartYear + 1.
+    pattern_years = maximum_offset - minimum_offset + 1
 
     seasons = []
     previous_end = None
@@ -219,9 +223,6 @@ def fetch_rotation_seasons(connection, simulation):
         if seasons_added == 0:
             break
         cycle_index += 1
-
-    if seasons and seasons[-1]["EndDate"] < experiment_end:
-        seasons[-1]["EndDate"] = experiment_end
 
     return seasons
 
