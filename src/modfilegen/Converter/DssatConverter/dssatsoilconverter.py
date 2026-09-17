@@ -85,8 +85,8 @@ class DssatSoilConverter(Converter):
                 item[1].lower()
                 for item in master_input_connection.execute("PRAGMA table_info(SoilLayers)")
             }
-            ssat_expression = "Soil.Ssat" if "Ssat" in soil_columns else "NULL"
-            Ssat_expression = "SoilLayers.Ssat" if "Ssat" in soil_layer_columns else "NULL"
+            ssat_expression = "Soil.Ssat" if "ssat" in soil_columns else "NULL"
+            Ssat_expression = "SoilLayers.Ssat" if "ssat" in soil_layer_columns else "NULL"
             fetchAllQuery1 = """Select Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd AS 'Soil.bd', Soil.OrganicC AS 'Soil.OrganicC', 
                                         Soil.Cf AS 'Soil.Cf', Soil.pH AS 'Soil.pH', Soil.extp AS 'Soil.extp', Soil.totp AS 'Soil.totp', 
                                         Soil.sand AS 'Soil.sand', Soil.clay AS 'Soil.clay', Soil.silt AS 'Soil.silt',
