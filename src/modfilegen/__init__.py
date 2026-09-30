@@ -16,5 +16,12 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "package": "",
                     "thirdyear": 0,
                     "dailyoutput": 0,
-                    "sticsv11Q0Strategy": "default"
+                    "sticsv11Q0Strategy": "default",
+                    "celsius_version": "v3",
+                    "celsius_mode": "standard",
+                    "dbCelsiusV32Template": "",
+                    "celsiusV32Output": "",
+                    "celsiusV32Executable": "celsiusV32",
+                    "celsiusIdsim": None,
+                    "runCelsiusV32": 1
                      }
