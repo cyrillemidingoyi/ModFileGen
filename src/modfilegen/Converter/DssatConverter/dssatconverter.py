@@ -14,6 +14,8 @@ CONFIGURATION (in GlobalVariables):
 
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
+from modfilegen.output_configuration import OutputConfiguration
+from .summary_output import transform_summary_dataframe
 from . import dssatcultivarconverter, dssatsoilconverter, dssatweatherconverter, dssatxconverter
 import sys, subprocess, shutil
 import concurrent.futures
@@ -82,7 +84,7 @@ def transform(fil, dt):
     dataArr = [list(map(float, str.split(outData[i])[13:]))
 		                   for i in range(nYear)][0]   
     df = pd.DataFrame({varId[i]: [dataArr[i]] for i in range(len(varId))})
-    df = df.reset_index().rename(columns={"PDAT": "Planting","EDAT":"Emergence","ADAT":"Ant","MDAT":"Mat","CWAM":"Biom_ma","HWAM":"Yield","H#AM":'GNumber',"LAIX":"MaxLai","NLCM":"Nleac","NIAM":"SoilN","CNAM":"CroN_ma","ESCP":"CumE","EPCP":"Transp"})
+    df = df.reset_index(drop=True)
     df.insert(0, "Model", "Dssat")
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
@@ -609,32 +611,39 @@ def main():
                 print("Warning: no DSSAT daily results were imported.", flush=True)
         print(f"DSSAT total time: {time()-start:.2f}s", flush=True)
 
+        output_configuration = OutputConfiguration.from_files(
+            GlobalVariables.get("outputVariablesConfig"),
+            GlobalVariables.get("outputSelectionsConfig"),
+            GlobalVariables.get("profileVariablesConfig"),
+        )
+        output_selection = GlobalVariables.get("outputSelection", "legacy")
+        raw_summary = pd.read_csv(result_path).replace(-99, np.nan)
+        df_result = transform_summary_dataframe(
+            raw_summary, output_configuration, output_selection
+        )
+        df_result.to_csv(result_path, index=False)
+
         if dt == 0:
-            summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
-                            "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac", "SoilN",
-                            "CroN_ma", "CumE", "Transp"]
-            df_result = pd.read_csv(result_path, usecols=lambda c: c in summary_cols + ["ys"] or c == "Idsim")
-            for col in summary_cols:
-                if col not in df_result.columns:
-                    df_result[col] = None
-            df_result["ys"] = (df_result["Planting"].astype(str).str[:4]).astype(int)
-            df_result = df_result.replace(-99, np.nan)
-            for col in ["Planting", "Emergence", "Ant", "Mat"]:
-                df_result[col] = extract_corrected_doy(df_result[col], df_result["ys"])
-            for col in ["Yield", "Biom_ma"]:
-                df_result[col] = df_result[col] / 1000
-            cols_to_clean = ["Planting", "Emergence", "Ant", "Mat", "Biom_ma", "Yield", "GNumber",
-                             "MaxLai", "Nleac", "SoilN", "CroN_ma", "CumE", "Transp"]
-            df_result[cols_to_clean] = df_result[cols_to_clean].mask(df_result[cols_to_clean] < 0, np.nan)
-            df_result = df_result[summary_cols]
-            _conn = sqlite3.connect(mi)
-            _conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Dssat'")
-            _conn.commit()
-            df_result.to_sql("SummaryOutput", _conn, if_exists="append", index=False)
-            _conn.commit()
-            _conn.close()
+            with sqlite3.connect(mi) as connection:
+                added_columns = output_configuration.ensure_summary_output_schema(
+                    connection, output_selection
+                )
+                connection.execute(
+                    "DELETE FROM SummaryOutput WHERE lower(Model) = 'dssat'"
+                )
+                df_result.to_sql(
+                    output_configuration.summary_table,
+                    connection,
+                    if_exists="append",
+                    index=False,
+                )
+            if added_columns:
+                print(
+                    "SummaryOutput columns added: " + ", ".join(added_columns),
+                    flush=True,
+                )
             print(f"✅ {len(df_result)} rows inserted into SummaryOutput.", flush=True)
-            del df_result
+        del raw_summary, df_result
 
     except Exception as ex:      
         print("Export not completed successfully!")

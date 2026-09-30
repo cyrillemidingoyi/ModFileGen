@@ -1,0 +1,36 @@
+version: 1
+selections:
+  legacy:
+    variables:
+    - planting
+    - emergence
+    - anthesis
+    - maturity
+    - biomass_at_maturity
+    - yield
+    - fresh_yield
+    - grain_number
+    - grain_n_at_maturity
+    - maximum_lai
+    - nitrogen_leaching
+    - soil_nitrogen
+    - crop_nitrogen_at_maturity
+    - cumulative_soil_evaporation
+    - cumulative_transpiration
+    - harvest_date
+    - leaf_biomass_at_harvest
+    - root_biomass
+    - maximum_root_depth
+    - cumulative_n_leached
+    - soil_mineral_n
+    - cumulative_n_mineralized
+    - cumulative_n_denitrified
+    - cumulative_n_fixed
+    - cumulative_n2o_emissions
+    - potential_irrigation_requirement
+  minimal:
+    variables:
+    - planting
+    - maturity
+    - biomass_at_maturity
+    - yield

@@ -1,0 +1,968 @@
+# Catalogue des variables partagees de SummaryOutput.
+# Chaque correspondance regroupe source, unite et conversion.
+# Formule: valeur_canonique = valeur_source * scale + offset.
+
+version: 1
+summary_output:
+  table: SummaryOutput
+  schema_mode: extend
+  identity_columns:
+    Model: TEXT
+    IdSim: TEXT
+    Texte: TEXT
+    SeasonOrder: INTEGER
+    PlantOrder: INTEGER
+    lon: REAL
+    lat: REAL
+    time: INTEGER
+variables:
+  planting:
+    column: Planting
+    description: Date de semis
+    type: INTEGER
+    unit: extended_day_index
+    models:
+      dssat:
+        source: Summary.OUT
+        field: PDAT
+        source_unit: YrDoy
+        transform: dssat_extended_day_index
+        status: verified
+        transform_context:
+          standard:
+            reference_year: planting_year
+          successive:
+            reference_year: sequence_start_year
+      stics:
+        source: mod_rapport.sti
+        field: iplts
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: iplts
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      celsius:
+        source: OutputSynt
+        field: iplt
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: iplt
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+  emergence:
+    column: Emergence
+    description: Date de levee
+    type: INTEGER
+    unit: extended_day_index
+    models:
+      dssat:
+        source: Summary.OUT
+        field: EDAT
+        source_unit: YrDoy
+        transform: dssat_extended_day_index
+        status: verified
+        transform_context:
+          standard:
+            reference_year: planting_year
+          successive:
+            reference_year: sequence_start_year
+      stics:
+        source: mod_rapport.sti
+        field: ilevs
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: ilevs
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      celsius:
+        source: OutputSynt
+        field: JulPheno1_1
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: JulPheno1_1
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+  anthesis:
+    column: Ant
+    description: Date de floraison ou d'anthese
+    type: INTEGER
+    unit: extended_day_index
+    models:
+      dssat:
+        source: Summary.OUT
+        field: ADAT
+        source_unit: YrDoy
+        transform: dssat_extended_day_index
+        status: verified
+        transform_context:
+          standard:
+            reference_year: planting_year
+          successive:
+            reference_year: sequence_start_year
+      stics:
+        source: mod_rapport.sti
+        field: iflos
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: iflos
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      celsius:
+        source: OutputSynt
+        field: JulPheno1_4
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: JulPheno1_4
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+  maturity:
+    column: Mat
+    description: Date de maturite
+    type: INTEGER
+    unit: extended_day_index
+    models:
+      dssat:
+        source: Summary.OUT
+        field: MDAT
+        source_unit: YrDoy
+        transform: dssat_extended_day_index
+        status: verified
+        transform_context:
+          standard:
+            reference_year: planting_year
+          successive:
+            reference_year: sequence_start_year
+      stics:
+        source: mod_rapport.sti
+        field: imats
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: imats
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      celsius:
+        source: OutputSynt
+        field: JulPheno1_6
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: JulPheno1_6
+        source_unit: simulation_day
+        transform: identity
+        status: verified
+  biomass_at_maturity:
+    column: Biom_ma
+    description: Biomasse aerienne a maturite
+    type: REAL
+    unit: kgDM/ha
+    models:
+      dssat:
+        source: Summary.OUT
+        field: CWAM
+        source_unit: kgDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: masec(n)
+        source_unit: tDM/ha
+        scale: 1000.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: masec(n)
+        source_unit: tDM/ha
+        scale: 1000.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.AboveGround.Wt
+        aggregation: last
+        source_unit: unknown
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: Biom(nrec)
+        source_unit: tDM/ha
+        scale: 1000.0
+        offset: 0.0
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: Biom(nrec)
+        source_unit: tDM/ha
+        scale: 1000.0
+        offset: 0.0
+        status: verified
+  yield:
+    column: Yield
+    description: Rendement recolte
+    type: REAL
+    unit: tDM/ha
+    models:
+      dssat:
+        source: Summary.OUT
+        field: HWAM
+        source_unit: kgDM/ha
+        scale: 0.001
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: mafruit
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: mafruit
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Grain.Wt
+        aggregation: last
+        source_unit: unknown
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: Grain(nrec)
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: Grain(nrec)
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  fresh_yield:
+    column: FreshYield
+    description: Rendement frais a la recolte
+    type: REAL
+    unit: tFW/ha
+    required: false
+    models:
+      dssat:
+        source: Summary.OUT
+        field: FHWAM
+        source_unit: kgFW/ha
+        scale: 0.001
+        offset: 0.0
+        missing_values:
+        - -99
+        status: verified
+  grain_number:
+    column: GNumber
+    description: Nombre de grains
+    type: REAL
+    unit: count/m2
+    models:
+      dssat:
+        source: Summary.OUT
+        field: H#AM
+        source_unit: count/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: chargefruit
+        source_unit: count/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: chargefruit
+        source_unit: count/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Grain.Number
+        aggregation: last
+        source_unit: unknown
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: Ngrain
+        source_unit: count/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: Ngrain
+        source_unit: count/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  grain_n_at_maturity:
+    column: GrainN_ma
+    description: Azote des grains ou organes recoltes a maturite
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: Summary.OUT
+        field: GNAM
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: QNgrain
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: QNgrain
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  maximum_lai:
+    column: MaxLAI
+    description: Indice foliaire maximal
+    type: REAL
+    unit: m2/m2
+    models:
+      dssat:
+        source: Summary.OUT
+        field: LAIX
+        source_unit: m2/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: laimax
+        source_unit: m2/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: laimax
+        source_unit: m2/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Leaf.MaximumLAI
+        aggregation: last
+        source_unit: m2/m2
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: LAI
+        source_unit: m2/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: LAI
+        source_unit: m2/m2
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  nitrogen_leaching:
+    column: Nleac
+    description: Lessivage cumule d'azote
+    type: REAL
+    unit: kgN/ha
+    models:
+      dssat:
+        source: Summary.OUT
+        field: NLCM
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: leaching_from_plt
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: leaching_from_plt
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Nitrogen.NLeached
+        aggregation: last
+        source_unit: unknown
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+  soil_nitrogen:
+    column: SoilN
+    description: Azote mineral du sol
+    type: REAL
+    unit: kgN/ha
+    models:
+      dssat:
+        source: Summary.OUT
+        field: NIAM
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        fields:
+        - azomes
+        - ammomes
+        operation: sum
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: SMNmes
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Nitrogen.SoilN
+        aggregation: last
+        source_unit: unknown
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: stockNsol
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsiusv32:
+        source: OutputSynt
+        field: stockNsol
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+  crop_nitrogen_at_maturity:
+    column: CroN_ma
+    description: Azote de la culture a maturite
+    type: REAL
+    unit: kgN/ha
+    models:
+      dssat:
+        source: Summary.OUT
+        field: CNAM
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: QNplante
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: QNplante
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Nitrogen.TotalN
+        aggregation: last
+        source_unit: unknown
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+  cumulative_soil_evaporation:
+    column: CumE
+    description: Evaporation cumulee du sol
+    type: REAL
+    unit: mm
+    models:
+      dssat:
+        source: Summary.OUT
+        field: ESCP
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: ces
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: ces
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Water.Es
+        aggregation: last
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: SigmaSimEsol
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: SigmaSimEsol
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_transpiration:
+    column: Transp
+    description: Transpiration cumulee de la culture
+    type: REAL
+    unit: mm
+    models:
+      dssat:
+        source: Summary.OUT
+        field: EPCP
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: cep
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: cep
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      apsim:
+        source: Report
+        field: Wheat.Water.Transpiration
+        aggregation: last
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: unverified
+      celsius:
+        source: OutputSynt
+        field: SigmaTranspiMC
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      celsiusv32:
+        source: OutputSynt
+        field: SigmaTranspiMC
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  harvest_date:
+    column: Harvest
+    description: Date de recolte
+    type: INTEGER
+    unit: extended_day_index
+    required: false
+    models:
+      dssat:
+        source: Summary.OUT
+        field: HDAT
+        source_unit: YrDoy
+        transform: dssat_extended_day_index
+        status: verified
+        transform_context:
+          standard:
+            reference_year: planting_year
+          successive:
+            reference_year: sequence_start_year
+      stics:
+        source: mod_rapport.sti
+        field: irecs
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: irecs
+        source_unit: extended_day_index
+        transform: identity
+        status: verified
+  leaf_biomass_at_harvest:
+    column: LeafBiomass
+    description: Biomasse foliaire a la recolte
+    type: REAL
+    unit: tDM/ha
+    required: false
+    models:
+      dssat:
+        source: Summary.OUT
+        field: LWAH
+        source_unit: kgDM/ha
+        status: invalid
+        reason: LWAH is not emitted in Summary.OUT; derive LWAD at HDAT from PlantGro.OUT
+      stics:
+        source: mod_rapport.sti
+        field: mafeuil
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: mafeuil
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  root_biomass:
+    column: RootBiomass
+    description: Biomasse racinaire
+    type: REAL
+    unit: tDM/ha
+    required: false
+    models:
+      dssat:
+        source: PlantGro.OUT
+        field: RWAD
+        aggregation: last
+        source_unit: kgDM/ha
+        scale: 0.001
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: msrac(n)
+        source_unit: tDM/ha
+        status: invalid
+        reason: end-of-cycle live root biomass is reset to zero; derive from daily output
+      sticsv11:
+        source: mod_rapport.sti
+        field: msrac(n)
+        source_unit: tDM/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  maximum_root_depth:
+    column: MaxRootDepth
+    description: Profondeur racinaire maximale
+    type: REAL
+    unit: cm
+    required: false
+    models:
+      dssat:
+        source: PlantGro.OUT
+        field: RDPD
+        aggregation: max
+        source_unit: m
+        scale: 100.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: zrac
+        aggregation: max
+        source_unit: cm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: zrac
+        aggregation: max
+        source_unit: cm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n_leached:
+    column: CumNLeached
+    description: Azote lessive cumule sur la simulation
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: SoilNi.OUT
+        field: NLCC
+        aggregation: last
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: Qles
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: Qles
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  soil_mineral_n:
+    column: SoilMineralN
+    description: Azote mineral du profil de sol
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: SoilNi.OUT
+        field: NIAD
+        aggregation: last
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        fields:
+        - azomes
+        - ammomes
+        operation: sum
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: SMNmes
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n_mineralized:
+    column: CumNMineralized
+    description: Azote mineralise cumule
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: SoilOrg.OUT
+        field: NMNC
+        aggregation: last
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: N_mineralisation
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: Qmin
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n_denitrified:
+    column: CumNDenitrified
+    description: Azote denitrifie cumule
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: N2O.OUT
+        field: NDNC
+        aggregation: last
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: QNdenit
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: QNdenit
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n_fixed:
+    column: CumNFixed
+    description: Azote fixe symbiotiquement cumule
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: Summary.OUT
+        field: NFXM
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: Qfix
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+        interpretation_condition: equivalent_to_cycle_total_without_intermediate_cuts
+      sticsv11:
+        source: mod_rapport.sti
+        field: Qfixtot
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n2o_emissions:
+    column: CumN2OEmissions
+    description: Emissions cumulees de N2O-N du sol
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      dssat:
+        source: Summary.OUT
+        field: N2OEC
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: Qem_N2O
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: Qem_N2O
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  potential_irrigation_requirement:
+    column: PotentialIrrigationRequirement
+    description: Besoin potentiel d'irrigation pour eviter le stress hydrique, hors pertes et sans contrainte de disponibilite en eau
+    type: REAL
+    unit: mm
+    required: false
+    interpretation_condition: automatic_irrigation_unconstrained
+    models:
+      dssat:
+        source: WaterBal.OUT
+        field: IRRC
+        aggregation: last
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      stics:
+        source: mod_rapport.sti
+        field: totir
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: totir
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+metadata_sources:
+  stics_summary: /home/midingoyi/projects_other/modulostics/doc/outputs.csv
+  dssat: /home/midingoyi/projects/AgriscaleContainer/dssat_csm_develop/Data/DATA.CDE
+  celsius: /mnt/d/Docs/Celsius/CelsiusCli_V32_work/Converted

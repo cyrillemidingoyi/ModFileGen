@@ -17,7 +17,6 @@ class SticsParamSolConverter(Converter):
         if parameter_resolver.has_override(
             "sticsv11", "paramsol", "q0", id_soil
         ):
-            print(f"Using overridden q0 value for soil ID {id_soil}")
             q0 = defaults["q0"]
         elif str(q0_strategy).strip().casefold() == "computed":
             q0 = calculate_q0(row)
