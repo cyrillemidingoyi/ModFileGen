@@ -20,6 +20,8 @@ from time import time
 import subprocess
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
+from modfilegen.output_configuration import OutputConfiguration
+from .summary_output import transform_summary_dataframe
 import uuid
 import sys
 import traceback
@@ -178,6 +180,12 @@ def main():
     dt = GlobalVariables["dt"]
     ori_mi = GlobalVariables["ori_MI"]
     split = GlobalVariables["parts"]
+    output_configuration = OutputConfiguration.from_files(
+        GlobalVariables.get("outputVariablesConfig"),
+        GlobalVariables.get("outputSelectionsConfig"),
+        GlobalVariables.get("profileVariablesConfig"),
+    )
+    output_selection = GlobalVariables.get("outputSelection", "legacy")
     
     data = fetch_data_from_sqlite(mi)
     print(f"📊 Total simulations to process: {len(data)}", flush=True)
@@ -201,8 +209,13 @@ def main():
         
         # Clear SummaryOutput for Celsius
         with sqlite3.connect(mi) as conn:
-            conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Celsius'")
+            added_columns = output_configuration.ensure_summary_output_schema(
+                conn, output_selection
+            )
+            conn.execute("DELETE FROM SummaryOutput WHERE lower(Model) = 'celsius'")
             conn.commit()
+        if added_columns:
+            print("SummaryOutput columns added: " + ", ".join(added_columns), flush=True)
         
         total_rows = 0
         total_chunks = len(args_list)
@@ -219,42 +232,17 @@ def main():
                     conn.commit()
                 
                 if dt == 0:
-                    # Map OutputSynt columns to SummaryOutput columns
-                    column_mapping = {
-                        "idsim": "Idsim",
-                        "iplt": "Planting",
-                        "JulPheno1_1": "Emergence",
-                        "JulPheno1_4": "Ant",
-                        "JulPheno1_6": "Mat",
-                        "Biom(nrec)": "Biom_ma",
-                        "Grain(nrec)": "Yield",
-                        "LAI": "MaxLai",
-                        "SigmaSimEsol": "CumE",
-                        "Ngrain": "GNumber",
-                        "stockNsol": "SoilN",
-                        "SigmaCultEsol": "Transp"
-                    }
-                    
-                    summary_df = chunk_df.rename(columns=column_mapping)
-                    summary_df["Model"] = "Celsius"
-                    summary_df["Texte"] = ""
-                    
-                    summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
-                                    "Biom_ma", "Yield", "GNumber", "MaxLai", "SoilN", "CumE", "Transp"]
-                    
-                    # Keep only the columns that exist
-                    available_cols = [col for col in summary_cols if col in summary_df.columns]
-                    summary_df = summary_df[available_cols]
-                    
-                    # Add missing columns as None
-                    for col in summary_cols:
-                        if col not in summary_df.columns:
-                            summary_df[col] = None
-                    
-                    summary_df = summary_df[summary_cols]
+                    summary_df = transform_summary_dataframe(
+                        chunk_df, output_configuration, output_selection, model="celsius"
+                    )
                     
                     with sqlite3.connect(mi) as conn:
-                        summary_df.to_sql("SummaryOutput", conn, if_exists='append', index=False)
+                        summary_df.to_sql(
+                            output_configuration.summary_table,
+                            conn,
+                            if_exists="append",
+                            index=False,
+                        )
                         conn.commit()
                 
                 total_rows += len(chunk_df)

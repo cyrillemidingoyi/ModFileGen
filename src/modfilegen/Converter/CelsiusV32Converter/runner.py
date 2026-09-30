@@ -7,46 +7,45 @@ import sqlite3
 import subprocess
 import tempfile
 
+import pandas as pd
+
 from modfilegen import GlobalVariables
+from modfilegen.output_configuration import OutputConfiguration
+from modfilegen.Converter.CelsiusConverter.summary_output import (
+    transform_summary_dataframe,
+)
 
 from .core import convert_database
 
 
-SUMMARY_MAPPING = {
-    "iplt": "Planting",
-    "JulPheno1_1": "Emergence",
-    "JulPheno1_4": "Ant",
-    "JulPheno1_6": "Mat",
-    "Biom(nrec)": "Biom_ma",
-    "Grain(nrec)": "Yield",
-    "Ngrain": "GNumber",
-    "LAI": "MaxLAI",
-    "stockNsol": "SoilN",
-    "SigmaSimEsol": "CumE",
-    "SigmaCultEsol": "Transp",
-}
-
-
 def _import_summary(master, celsius_database):
+    output_configuration = OutputConfiguration.from_files(
+        GlobalVariables.get("outputVariablesConfig"),
+        GlobalVariables.get("outputSelectionsConfig"),
+        GlobalVariables.get("profileVariablesConfig"),
+    )
+    output_selection = GlobalVariables.get("outputSelection", "legacy")
     with sqlite3.connect(celsius_database) as source, sqlite3.connect(master) as target:
-        source.row_factory = sqlite3.Row
-        target_columns = {
-            row[1].lower(): row[1]
-            for row in target.execute("PRAGMA table_info(SummaryOutput)")
-        }
-        if not target_columns:
-            return
+        added_columns = output_configuration.ensure_summary_output_schema(
+            target, output_selection
+        )
         target.execute("DELETE FROM SummaryOutput WHERE lower(Model)='celsiusv32'")
-        outputs = source.execute(
+        outputs = pd.read_sql_query(
             """
             SELECT o.*, s.Situation, s.codesuite
             FROM OutputSynt AS o
             LEFT JOIN SimUnitList AS s ON s.idsim=o.Idsim
             ORDER BY s.ChampTri
-            """
+            """,
+            source,
         )
-        for output in outputs:
-            row = dict(output)
+        if outputs.empty:
+            target.commit()
+            return
+
+        season_orders = []
+        original_ids = []
+        for _, row in outputs.iterrows():
             generated_id = str(row.get("Idsim", ""))
             season_order = 1
             if "__S" in generated_id:
@@ -54,27 +53,29 @@ def _import_summary(master, celsius_database):
                     season_order = int(generated_id.rsplit("__S", 1)[1][:3])
                 except ValueError:
                     season_order = 1
-            values = {
-                "Model": "CelsiusV32",
-                "IdSim": row.get("Situation") or generated_id,
-                "Texte": "",
-                "SeasonOrder": season_order,
-            }
-            for source_name, target_name in SUMMARY_MAPPING.items():
-                values[target_name] = row.get(source_name)
-            selected = {
-                target_columns[name.lower()]: value
-                for name, value in values.items()
-                if name.lower() in target_columns
-            }
-            columns = list(selected)
-            target.execute(
-                f"INSERT INTO SummaryOutput "
-                f"({', '.join(f'[{name}]' for name in columns)}) VALUES "
-                f"({', '.join('?' for _ in columns)})",
-                [selected[name] for name in columns],
-            )
+            season_orders.append(season_order)
+            original_ids.append(row.get("Situation") or generated_id)
+        outputs["Idsim"] = original_ids
+        outputs["SeasonOrder"] = season_orders
+        outputs["PlantOrder"] = 1
+        summary = transform_summary_dataframe(
+            outputs,
+            output_configuration,
+            output_selection,
+            model="celsiusv32",
+        )
+        summary.to_sql(
+            output_configuration.summary_table,
+            target,
+            if_exists="append",
+            index=False,
+        )
         target.commit()
+    if added_columns:
+        print(
+            "SummaryOutput columns added: " + ", ".join(added_columns),
+            flush=True,
+        )
 
 
 def _set_daily_output(celsius_database, enabled):

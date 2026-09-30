@@ -23,5 +23,9 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "celsiusV32Output": "",
                     "celsiusV32Executable": "celsiusV32",
                     "celsiusIdsim": None,
-                    "runCelsiusV32": 1
+                    "runCelsiusV32": 1,
+                    "outputVariablesConfig": None,
+                    "outputSelectionsConfig": None,
+                    "profileVariablesConfig": None,
+                    "outputSelection": "legacy"
                      }
