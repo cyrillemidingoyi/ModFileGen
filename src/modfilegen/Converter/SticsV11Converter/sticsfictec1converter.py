@@ -29,6 +29,28 @@ def _stics_date(cumulative_day, delay=0):
     return int(cumulative_day) + int(delay)
 
 
+def _format_irrigation_interventions(sowing_date, operations):
+    """Format manual irrigation dates as signed sowing-relative offsets."""
+    lines = ["nbinterventions", str(len(operations))]
+    for operation in operations:
+        # The STICS text format repeats the table header for every row.
+        lines.append("julapI_or_sum_upvt amount")
+        irrigation_date = _stics_date(
+            sowing_date, operation["DIrrigation"]
+        )
+        lines.append(
+            f"{irrigation_date} {float(operation['IrrigationAmount'])}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _format_irrigation_setting(field_name, operations, default_content):
+    """Force the STICS manual/date mode when manual operations are present."""
+    if operations:
+        return f"{field_name}\n2\n"
+    return default_content
+
+
 def _simulation_end_day(start_year, end_year, end_day):
     end_date = int(end_day) + _season_year_offset_days(
         start_year, int(end_year) - int(start_year)
@@ -53,8 +75,12 @@ def _irecbutoir(simulation_end_day):
 class SticsFictec1Converter(Converter):
     def __init__(self):
         super().__init__()
+        self._active_parameter_resolver = None
+        self._active_crop_management = None
+        self._active_management_table = None
+        self._active_management_parameters = None
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None, date_offset=None, simulation_end_day=None):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir, season_order=None, date_offset=None, simulation_end_day=None, irrigation_repository=None, parameter_resolver=None):
         file_name = "fictec1.txt"
         file_name2 = "fictec2.txt"
         fileContent = ""
@@ -95,6 +121,9 @@ class SticsFictec1Converter(Converter):
 
         T = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model='sticsv11') AND ([Table]='fictec1'));"
         DT = pd.read_sql_query(T, ModelDictionary_Connection)
+        management_parameters = self._activate_management_parameters(
+            parameter_resolver, rw, "fictec1"
+        )
 
         fetchallquery2 = """SELECT SimUnitList.idsim, CropManagement.sowingdate, OrganicFOperations.Dferti, OrganicFOperations.OFNumber, OrganicFOperations.CNferti, 
                 OrganicFOperations.NFerti, OrganicFOperations.Qmanure, OrganicFOperations.TypeResidues, ListResidues.idresidueStics, CropManagement.SoilTillPolicyCode 
@@ -165,26 +194,52 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "idrp")
         fileContent += self.format_item(DT, "imat")
         fileContent += self.format_item(DT, "irec")
-        fileContent += self.format_item(DT, "effirr")  # change positioon
-        fileContent += self.format_item(DT, "codecalirrig")
-        fileContent += self.format_item(DT, "ratiol")
-        fileContent += self.format_item(DT, "dosimx")
-        fileContent += self.format_item(DT, "doseirrigmin")
-        fileContent += self.format_item(DT, "codedate_irrigauto") # add
-        fileContent += self.format_item(DT, "datedeb_irrigauto") # add
-        fileContent += self.format_item(DT, "datefin_irrigauto") # add
-        fileContent += self.format_item(DT, "stage_start_irrigauto") # add
-        fileContent += self.format_item(DT, "stage_end_irrigauto") # add
-        fileContent += self.format_item(DT, "codedateappH2O")
-        
-        fileContent += "nbinterventions\n"
-        fileContent += "0\n"
-        fileContent += self.format_item(DT, "codlocirrig")
-        fileContent += self.format_item(DT, "locirrig")
+        irrigation_operations = (
+            () if irrigation_repository is None else
+            irrigation_repository.get_operations(rw.get("IrrigationPolicyCode"))
+        )
+        fileContent += self.format_management_item(
+            DT, "effirr", management_parameters
+        )
+        fileContent += _format_irrigation_setting(
+            "codecalirrig", irrigation_operations,
+            self.format_management_item(
+                DT, "codecalirrig", management_parameters
+            ),
+        )
+        for parameter in (
+            "ratiol", "dosimx", "doseirrigmin", "codedate_irrigauto",
+            "datedeb_irrigauto", "datefin_irrigauto",
+            "stage_start_irrigauto", "stage_end_irrigauto",
+        ):
+            fileContent += self.format_management_item(
+                DT, parameter, management_parameters
+            )
+        fileContent += _format_irrigation_setting(
+            "codedateappH2O", irrigation_operations,
+            self.format_management_item(
+                DT, "codedateappH2O", management_parameters
+            ),
+        )
+
+        fileContent += _format_irrigation_interventions(
+            rw["sowingdate"], irrigation_operations
+        )
+        fileContent += self.format_management_item(
+            DT, "codlocirrig", management_parameters
+        )
+        fileContent += self.format_management_item(
+            DT, "locirrig", management_parameters
+        )
         fileContent += "profmes\n"
-        fileContent += format(rw["SoilTotalDepth"], ".0f") + "\n"      
+        if self._has_management_override(parameter_resolver, rw, "profmes"):
+            fileContent += str(management_parameters["profmes"]) + "\n"
+        else:
+            fileContent += format(rw["SoilTotalDepth"], ".0f") + "\n"
         #fileContent += self.format_item(DT, "engrais") # remove
-        fileContent += self.format_item(DT, "concirr")
+        fileContent += self.format_management_item(
+            DT, "concirr", management_parameters
+        )
         fileContent += self.format_item(DT, "codedateappN")
         fileContent += self.format_item(DT, "codefracappN")
         fileContent += self.format_item(DT, "Qtot_N")
@@ -317,6 +372,9 @@ class SticsFictec1Converter(Converter):
 
         fileContent = ""
         rw = rows[1]
+        management_parameters = self._activate_management_parameters(
+            parameter_resolver, rw, "fictec2"
+        )
         Sql = """SELECT SoilTillPolicy.SoilTillPolicyCode, SoilTillageOperations.STNumber, SoilTillPolicy.NumTillOperations, SoilTillageOperations.DepthResUp, SoilTillageOperations.DepthResLow, SoilTillageOperations.DSTill
                 FROM SoilTillPolicy INNER JOIN SoilTillageOperations ON SoilTillPolicy.SoilTillPolicyCode = SoilTillageOperations.SoilTillPolicyCode
                 where SoilTillPolicy.SoilTillPolicyCode= '%s';"""%(rw["SoilTillPolicyCode"])
@@ -382,26 +440,52 @@ class SticsFictec1Converter(Converter):
         fileContent += self.format_item(DT, "idrp")
         fileContent += self.format_item(DT, "imat")
         fileContent += self.format_item(DT, "irec")
-        fileContent += self.format_item(DT, "effirr")  # change positioon
-        fileContent += self.format_item(DT, "codecalirrig")
-        fileContent += self.format_item(DT, "ratiol")
-        fileContent += self.format_item(DT, "dosimx")
-        fileContent += self.format_item(DT, "doseirrigmin")
-        fileContent += self.format_item(DT, "codedate_irrigauto") # add
-        fileContent += self.format_item(DT, "datedeb_irrigauto") # add
-        fileContent += self.format_item(DT, "datefin_irrigauto") # add
-        fileContent += self.format_item(DT, "stage_start_irrigauto") # add
-        fileContent += self.format_item(DT, "stage_end_irrigauto") # add
-        fileContent += self.format_item(DT, "codedateappH2O")
-                
-        fileContent += "nbinterventions\n"
-        fileContent += "0\n"
-        fileContent += self.format_item(DT, "codlocirrig")
-        fileContent += self.format_item(DT, "locirrig")
+        irrigation_operations = (
+            () if irrigation_repository is None else
+            irrigation_repository.get_operations(rw.get("IrrigationPolicyCode"))
+        )
+        fileContent += self.format_management_item(
+            DT, "effirr", management_parameters
+        )
+        fileContent += _format_irrigation_setting(
+            "codecalirrig", irrigation_operations,
+            self.format_management_item(
+                DT, "codecalirrig", management_parameters
+            ),
+        )
+        for parameter in (
+            "ratiol", "dosimx", "doseirrigmin", "codedate_irrigauto",
+            "datedeb_irrigauto", "datefin_irrigauto",
+            "stage_start_irrigauto", "stage_end_irrigauto",
+        ):
+            fileContent += self.format_management_item(
+                DT, parameter, management_parameters
+            )
+        fileContent += _format_irrigation_setting(
+            "codedateappH2O", irrigation_operations,
+            self.format_management_item(
+                DT, "codedateappH2O", management_parameters
+            ),
+        )
+
+        fileContent += _format_irrigation_interventions(
+            rw["sowingdate"], irrigation_operations
+        )
+        fileContent += self.format_management_item(
+            DT, "codlocirrig", management_parameters
+        )
+        fileContent += self.format_management_item(
+            DT, "locirrig", management_parameters
+        )
         fileContent += "profmes\n"
-        fileContent += format(rw["SoilTotalDepth"], ".0f") + "\n"      
+        if self._has_management_override(parameter_resolver, rw, "profmes"):
+            fileContent += str(management_parameters["profmes"]) + "\n"
+        else:
+            fileContent += format(rw["SoilTotalDepth"], ".0f") + "\n"
         #fileContent += self.format_item(DT, "engrais") # remove
-        fileContent += self.format_item(DT, "concirr")
+        fileContent += self.format_management_item(
+            DT, "concirr", management_parameters
+        )
         fileContent += self.format_item(DT, "codedateappN")
         fileContent += self.format_item(DT, "codefracappN")
         fileContent += self.format_item(DT, "Qtot_N")
@@ -524,14 +608,52 @@ class SticsFictec1Converter(Converter):
             
         return [zz1, zz2]
 
+    def _activate_management_parameters(
+        self, parameter_resolver, crop_management, target_table
+    ):
+        self._active_parameter_resolver = parameter_resolver
+        self._active_crop_management = crop_management
+        self._active_management_table = target_table
+        if parameter_resolver is None:
+            self._active_management_parameters = None
+            return None
+        self._active_management_parameters = parameter_resolver.resolve_management(
+            "sticsv11", target_table, crop_management["idMangt"],
+            crop_management.get("SeasonOrder", 1),
+            crop_management.get("PlantOrder", 1),
+        )
+        return self._active_management_parameters
+
+    def _has_management_override(
+        self, parameter_resolver, crop_management, parameter
+    ):
+        if parameter_resolver is None:
+            return False
+        return parameter_resolver.has_management_override(
+            "sticsv11", self._active_management_table, parameter,
+            crop_management["idMangt"],
+            crop_management.get("SeasonOrder", 1),
+            crop_management.get("PlantOrder", 1),
+        )
+
+    def format_management_item(self, row, champ, parameters, precision=5):
+        return self.format_item(row, champ, precision)
+
     def format_item(self, row, champ, precision = 5, fieldIt = 0):
         fieldName = champ
         fileContent = ""
         if (fieldIt != 0):
             x = fieldName.split(".")
             fieldName = ".".join(x[1:])
-        rw = row[row["Champ"] == champ]
-        data = rw["dv"].values[0]
+        if self._has_management_override(
+            self._active_parameter_resolver,
+            self._active_crop_management,
+            champ,
+        ):
+            data = self._active_management_parameters[champ.casefold()]
+        else:
+            rw = row[row["Champ"] == champ]
+            data = rw["dv"].values[0]
         res = ""
         if isinstance(data, str) or isinstance(data, int):
             res = str(data)

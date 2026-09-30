@@ -21,6 +21,7 @@ import pandas as pd
 from modfilegen import GlobalVariables
 from modfilegen.parameter_resolver import ParameterResolver
 from modfilegen.soil_repository import SoilDataRepository
+from modfilegen.irrigation_repository import IrrigationRepository
 from . import sticsclimatconverter
 from . import sticsficiniconverter
 from . import sticsficplt1converter
@@ -155,7 +156,11 @@ def fetch_rotation_seasons(connection, simulation):
     minimum_offset = min(season["PatternYearOffset"] for season in pattern)
     if minimum_offset < 0:
         raise ValueError(f"SeasonYearOffset cannot be negative; found {minimum_offset}")
-    pattern_years = max(season["PatternYearOffset"] for season in pattern) + 1
+    maximum_offset = max(season["PatternYearOffset"] for season in pattern)
+    # Offsets locate the pattern relative to StartYear; they do not add empty
+    # years to its repetition period.  A single season at offset 1 is an
+    # annual pattern whose first occurrence is simply in StartYear + 1.
+    pattern_years = maximum_offset - minimum_offset + 1
 
     seasons = []
     previous_end = None
@@ -218,9 +223,6 @@ def fetch_rotation_seasons(connection, simulation):
         if seasons_added == 0:
             break
         cycle_index += 1
-
-    if seasons and seasons[-1]["EndDate"] < experiment_end:
-        seasons[-1]["EndDate"] = experiment_end
 
     return seasons
 
@@ -325,7 +327,7 @@ def load_static_stics_files(package):
 
 def create_context(
     mi, md, directory_path, temp_dir, pltfolder, package, dt,
-    soil_ids=None, q0_strategy="default",
+    soil_ids=None, q0_strategy="default", management_ids=None, point_ids=None,
 ):
     rap, var, prof = load_static_stics_files(package)
     context = {
@@ -350,8 +352,18 @@ def create_context(
     context["parameter_resolver"].prefetch(
         "sticsv11", {"paramsol"}, soil_ids
     )
+    context["parameter_resolver"].prefetch_management(
+        "sticsv11", {"fictec1", "fictec2"}, set(management_ids or ())
+    )
+    context["parameter_resolver"].prefetch_point(
+        "sticsv11", {"station"}, set(point_ids or ())
+    )
     context["soil_repository"] = SoilDataRepository(context["master"])
     context["soil_repository"].prefetch(soil_ids)
+    context["irrigation_repository"] = IrrigationRepository(context["master"])
+    context["irrigation_repository"].prefetch_managements(
+        set(management_ids or ())
+    )
     return context
 
 
@@ -394,6 +406,7 @@ def generate_season_inputs(simulation, season, context):
         sim_path, context["dictionary"], context["master"], context["rap"],
         context["var"], context["prof"], str(usmdir),
         season_order=management_season_order,
+        parameter_resolver=context["parameter_resolver"],
     )
     sticsnewtravailconverter.SticsNewTravailConverter().export(
         sim_path, context["dictionary"], context["master"], str(usmdir),
@@ -415,6 +428,8 @@ def generate_season_inputs(simulation, season, context):
         sim_path, context["dictionary"], context["master"], str(usmdir),
         season_order=management_season_order, date_offset=fictec_date_offset,
         simulation_end_day=season_end_day,
+        irrigation_repository=context["irrigation_repository"],
+        parameter_resolver=context["parameter_resolver"],
     )
     sticsficplt1converter.SticsFicplt1Converter().export(
         sim_path, context["master"], context["pltfolder"], str(usmdir),
@@ -475,7 +490,10 @@ def process_simulation(
     if owns_context:
         context = create_context(
             mi, md, directory_path, temp_dir, pltfolder, package, dt,
-            soil_ids={simulation["idsoil"]}, q0_strategy=q0_strategy,
+            soil_ids={simulation["idsoil"]},
+            management_ids={simulation["idMangt"]},
+            point_ids={simulation["idPoint"]},
+            q0_strategy=q0_strategy,
         )
     usm_dirs = []
     dataframes = []
@@ -556,6 +574,8 @@ def process_simulation_batch(
     context = create_context(
         mi, md, directory_path, temp_dir, pltfolder, package, dt,
         soil_ids={simulation["idsoil"] for simulation in simulations},
+        management_ids={simulation["idMangt"] for simulation in simulations},
+        point_ids={simulation["idPoint"] for simulation in simulations},
         q0_strategy=q0_strategy,
     )
     try:

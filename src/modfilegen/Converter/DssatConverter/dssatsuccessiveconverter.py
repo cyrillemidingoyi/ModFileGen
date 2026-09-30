@@ -121,11 +121,12 @@ def dssat_sequence_end_date(group, nyers=None):
 
 def sequence_weather_years(group):
     first_year = row_start_date(group[0]).year
-    # DSSAT reads weather on the exclusive NYERS boundary while closing a Q
-    # sequence.  When SDATE is January 1, that boundary is January 1 of the
-    # following calendar year, so its weather file must also be available.
+    # DSSAT reads weather beyond the last completed Q-sequence cycle while
+    # deciding whether another cycle starts.  For a non-January SDATE this
+    # crosses into the calendar year after the NYERS boundary year.
     first_start = row_start_date(group[0])
-    last_year = add_years(first_start, dssat_sequence_years(group)).year
+    boundary = add_years(first_start, dssat_sequence_years(group))
+    last_year = boundary.year + (boundary.timetuple().tm_yday > 1)
     return list(range(first_year, last_year + 1))
 
 
@@ -250,12 +251,88 @@ def set_section_date(sections, section, value):
         ]
 
 
+def date_from_yydoy(value, reference_year):
+    """Parse a DSSAT YYDDD date using the century nearest reference_year."""
+    text = str(value).strip()
+    if not re.fullmatch(r"\d{5}", text):
+        return None
+    year_in_century = int(text[:2])
+    day = int(text[2:])
+    century = (int(reference_year) // 100) * 100
+    years = (
+        century + year_in_century - 100,
+        century + year_in_century,
+        century + year_in_century + 100,
+    )
+    year = min(years, key=lambda candidate: abs(candidate - int(reference_year)))
+    if day < 1 or day > (julian_date(year + 1, 1) - julian_date(year, 1)).days:
+        return None
+    return julian_date(year, day)
+
+
+def shift_section_dates(sections, section, days, reference_year):
+    """Shift absolute YYDDD dates emitted by a legacy DSSAT block writer."""
+    if not days or section not in sections:
+        return
+    shifted = []
+    for line in sections[section]:
+        match = re.match(r"^(\s*\S+\s+)(\S+)(.*)$", line)
+        value = date_from_yydoy(match.group(2), reference_year) if match else None
+        # Values such as 00001 can be model sentinels rather than operation
+        # dates. Only move dates belonging to the legacy management window.
+        if value is None or abs(value.year - int(reference_year)) > 1:
+            shifted.append(line)
+            continue
+        shifted.append(
+            replace_second_token(
+                line, date_to_yydoy(value + timedelta(days=days))
+            )
+        )
+    sections[section] = shifted
+
+
+def apply_successive_management_dates(sections, simunit_row, season_row, management):
+    """Replace legacy standard-mode dates with successive calendar dates."""
+    planting = julian_date(
+        int(simunit_row["StartYear"]) + int(management["SowingYearOffset"]),
+        int(management["sowingdate"]),
+    )
+    legacy_planting = julian_date(
+        int(season_row["StartYear"]), int(management["sowingdate"])
+    )
+    shift_days = (planting - legacy_planting).days
+    for section in (
+        "*PLANTING",
+        "*IRRIGATION",
+        "*FERTILIZERS",
+        "*RESIDUES",
+        "*TILLAGE",
+    ):
+        shift_section_dates(
+            sections, section, shift_days, legacy_planting.year
+        )
+    # PDATE is authoritative even when a legacy writer emits an unusual value.
+    set_section_date(sections, "*PLANTING", date_to_yydoy(planting))
+
+
 def data_lines(lines):
     return [line for line in lines if line.strip() and not line.lstrip().startswith(("@", "*", "!", "$"))]
 
 
 def section_has_data(sections, section):
     return section in sections and bool(data_lines(sections[section]))
+
+
+def policy_code_enabled(value):
+    """Return whether a management policy identifier selects a policy.
+
+    Policy identifiers are commonly textual foreign keys (for example
+    ``MA_IA55``), while legacy databases may use the numeric sentinel 0.
+    """
+    if value is None:
+        return False
+    text = str(value).strip()
+    return bool(text) and text not in {"0", "0.0"}
 
 
 def query_one(connection, sql):
@@ -453,8 +530,14 @@ def treatment_line(rotation, model_dictionary_connection, master_input_connectio
         "SA": 1 if section_has_data(sections, "*SOIL") else 0,
         "IC": 1 if rotation.index == 1 else 0,
         "MP": rotation.index,
-        "MI": rotation.index if int(flags["IrrigationPolicyCode"]) != 0 and section_has_data(sections, "*IRRIGATION") else 0,
-        "MF": rotation.index if int(flags["InoFertiPolicyCode"]) != 0 and section_has_data(sections, "*FERTILIZERS") else 0,
+        "MI": rotation.index
+        if policy_code_enabled(flags["IrrigationPolicyCode"])
+        and section_has_data(sections, "*IRRIGATION")
+        else 0,
+        "MF": rotation.index
+        if policy_code_enabled(flags["InoFertiPolicyCode"])
+        and section_has_data(sections, "*FERTILIZERS")
+        else 0,
         "MR": rotation.index if int(flags["NumOrganicFerti"]) != 0 and section_has_data(sections, "*RESIDUES") else 0,
         "MC": 0,
         "MT": rotation.index if int(flags["NumTillOperations"]) != 0 and section_has_data(sections, "*TILLAGE") else 0,
@@ -636,6 +719,7 @@ def generate_rotation_input(
     )
 
     sections = parse_sections(read_generated_xfile(single_dir))
+    apply_successive_management_dates(sections, row, season_row, management)
     set_section_date(
         sections, "*HARVEST", date_to_yydoy(row_end_date(season_row))
     )

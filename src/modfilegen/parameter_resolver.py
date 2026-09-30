@@ -24,6 +24,12 @@ class ParameterResolver:
         self._overrides = {}
         self._resolved = {}
         self._prefetched = set()
+        self._management_overrides = {}
+        self._management_resolved = {}
+        self._prefetched_managements = set()
+        self._point_overrides = {}
+        self._point_resolved = {}
+        self._prefetched_points = set()
         
     @staticmethod
     def _normalize(value):
@@ -189,3 +195,195 @@ class ParameterResolver:
             self._normalize(id_soil),
         )
         return self._normalize(parameter) in self._overrides.get(key, {})
+
+    def _load_management_overrides(self, model, target_tables, management_ids):
+        tables = tuple(sorted(target_tables))
+        managements = tuple(sorted(management_ids))
+        for offset in range(0, len(managements), 500):
+            batch = managements[offset:offset + 500]
+            query = f"""
+                SELECT idMangt, SeasonOrder, PlantOrder, TargetTable,
+                       Parameter, Value
+                FROM CropManagementParameterOverrides
+                WHERE lower(Model) = ?
+                  AND lower(TargetTable) IN ({self._placeholders(tables)})
+                  AND lower(idMangt) IN ({self._placeholders(batch)})
+            """
+            try:
+                rows = self._master_input.execute(
+                    query, (model, *tables, *batch)
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table: cropmanagementparameteroverrides" not in (
+                    str(exc).casefold()
+                ):
+                    raise
+                return
+            for (
+                management_id, season_order, plant_order, target_table,
+                parameter, raw_value,
+            ) in rows:
+                table_key = self._normalize(target_table)
+                parameter_key = self._normalize(parameter)
+                definition = self._definitions[(model, table_key)][parameter_key]
+                key = (
+                    model, table_key, self._normalize(management_id),
+                    int(season_order), int(plant_order),
+                )
+                self._management_overrides.setdefault(key, {})[
+                    parameter_key
+                ] = self._convert_value(raw_value, definition)
+
+    def prefetch_management(
+        self, model: str, target_tables: Iterable[str],
+        management_ids: Iterable[str],
+    ):
+        """Preload model defaults and crop-management-specific overrides."""
+        model_key = self._normalize(model)
+        table_keys = {
+            self._normalize(target_table) for target_table in target_tables
+        }
+        management_keys = {
+            self._normalize(management_id)
+            for management_id in management_ids
+            if management_id is not None
+        }
+        if not table_keys:
+            return
+
+        self._load_definitions(model_key, table_keys)
+        self._load_management_overrides(
+            model_key, table_keys, management_keys
+        )
+        for table_key in table_keys:
+            for management_key in management_keys:
+                self._prefetched_managements.add(
+                    (model_key, table_key, management_key)
+                )
+
+    def resolve_management(
+        self, model: str, target_table: str, management_id: str,
+        season_order: int = 1, plant_order: int = 1,
+    ):
+        model_key = self._normalize(model)
+        table_key = self._normalize(target_table)
+        management_key = self._normalize(management_id)
+        prefetch_key = (model_key, table_key, management_key)
+        if prefetch_key not in self._prefetched_managements:
+            raise RuntimeError(
+                "Parameters were not prefetched for "
+                f"model={model!r}, table={target_table!r}, "
+                f"idMangt={management_id!r}"
+            )
+
+        key = (
+            model_key, table_key, management_key,
+            int(season_order), int(plant_order),
+        )
+        if key not in self._management_resolved:
+            definitions = self._definitions.get((model_key, table_key), {})
+            resolved = {
+                name: definition.default_value
+                for name, definition in definitions.items()
+            }
+            resolved.update(self._management_overrides.get(key, {}))
+            self._management_resolved[key] = MappingProxyType(resolved)
+        return self._management_resolved[key]
+
+    def has_management_override(
+        self, model: str, target_table: str, parameter: str,
+        management_id: str, season_order: int = 1, plant_order: int = 1,
+    ) -> bool:
+        key = (
+            self._normalize(model), self._normalize(target_table),
+            self._normalize(management_id), int(season_order), int(plant_order),
+        )
+        return self._normalize(parameter) in self._management_overrides.get(
+            key, {}
+        )
+
+    def _load_point_overrides(self, model, target_tables, point_ids):
+        tables = tuple(sorted(target_tables))
+        points = tuple(sorted(point_ids))
+        for offset in range(0, len(points), 500):
+            batch = points[offset:offset + 500]
+            query = f"""
+                SELECT idPoint, TargetTable, Parameter, Value
+                FROM PointParameterOverrides
+                WHERE lower(Model) = ?
+                  AND lower(TargetTable) IN ({self._placeholders(tables)})
+                  AND lower(idPoint) IN ({self._placeholders(batch)})
+            """
+            try:
+                rows = self._master_input.execute(
+                    query, (model, *tables, *batch)
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table: pointparameteroverrides" not in (
+                    str(exc).casefold()
+                ):
+                    raise
+                return
+            for point_id, target_table, parameter, raw_value in rows:
+                table_key = self._normalize(target_table)
+                parameter_key = self._normalize(parameter)
+                definition = self._definitions[(model, table_key)][parameter_key]
+                key = (model, table_key, self._normalize(point_id))
+                self._point_overrides.setdefault(key, {})[
+                    parameter_key
+                ] = self._convert_value(raw_value, definition)
+
+    def prefetch_point(
+        self, model: str, target_tables: Iterable[str],
+        point_ids: Iterable[str],
+    ):
+        """Preload model defaults and point-specific overrides."""
+        model_key = self._normalize(model)
+        table_keys = {
+            self._normalize(target_table) for target_table in target_tables
+        }
+        point_keys = {
+            self._normalize(point_id)
+            for point_id in point_ids
+            if point_id is not None
+        }
+        if not table_keys:
+            return
+
+        self._load_definitions(model_key, table_keys)
+        self._load_point_overrides(model_key, table_keys, point_keys)
+        for table_key in table_keys:
+            definitions = self._definitions.get((model_key, table_key), {})
+            defaults = {
+                name: definition.default_value
+                for name, definition in definitions.items()
+            }
+            for point_key in point_keys:
+                key = (model_key, table_key, point_key)
+                resolved = defaults.copy()
+                resolved.update(self._point_overrides.get(key, {}))
+                self._point_resolved[key] = MappingProxyType(resolved)
+                self._prefetched_points.add(key)
+
+    def resolve_point(self, model: str, target_table: str, point_id: str):
+        key = (
+            self._normalize(model), self._normalize(target_table),
+            self._normalize(point_id),
+        )
+        try:
+            return self._point_resolved[key]
+        except KeyError as exc:
+            raise RuntimeError(
+                "Parameters were not prefetched for "
+                f"model={model!r}, table={target_table!r}, "
+                f"idPoint={point_id!r}"
+            ) from exc
+
+    def has_point_override(
+        self, model: str, target_table: str, parameter: str, point_id: str
+    ) -> bool:
+        key = (
+            self._normalize(model), self._normalize(target_table),
+            self._normalize(point_id),
+        )
+        return self._normalize(parameter) in self._point_overrides.get(key, {})

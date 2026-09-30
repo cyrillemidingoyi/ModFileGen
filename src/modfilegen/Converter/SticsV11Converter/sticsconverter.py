@@ -2,6 +2,7 @@ from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
 from modfilegen.parameter_resolver import ParameterResolver
 from modfilegen.soil_repository import SoilDataRepository
+from modfilegen.irrigation_repository import IrrigationRepository
 from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailconverter, sticsparamsolconverter
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
@@ -919,6 +920,7 @@ def process_chunk(*args):
     # Apply series of functions to each row in the chunk
     weathertable = {}
     soiltable = {}
+    stationtable = {}
     tempopar = {}
     tectable = {}
     initable = {}
@@ -936,8 +938,20 @@ def process_chunk(*args):
         ModelDictionary_Connection, MasterInput_Connection
     )
     parameter_resolver.prefetch("sticsv11", {"paramsol"}, soil_ids)
+    parameter_resolver.prefetch_management(
+        "sticsv11", {"fictec1", "fictec2"},
+        {row["idMangt"] for row in chunk if row["idMangt"] is not None},
+    )
+    parameter_resolver.prefetch_point(
+        "sticsv11", {"station"},
+        {row["idPoint"] for row in chunk if row["idPoint"] is not None},
+    )
     soil_repository = SoilDataRepository(MasterInput_Connection)
     soil_repository.prefetch(soil_ids)
+    irrigation_repository = IrrigationRepository(MasterInput_Connection)
+    irrigation_repository.prefetch_managements(
+        row["idMangt"] for row in chunk if row["idMangt"] is not None
+    )
         
     for i, row in enumerate(chunk):
         # Periodically clear caches to free memory
@@ -992,13 +1006,24 @@ def process_chunk(*args):
                     q0_strategy=q0_strategy,
                 )
                 del paramsolconverter  # Free converter
+                soiltable[soilid] = r1
+            else:
+                write_file(usmdir, "param.sol", soiltable[soilid])
+
+            stationid = (
+                str(row["idPoint"]).strip().casefold(), is_mixed_crop
+            )
+            if stationid not in stationtable:
                 stationconverter = sticsstationconverter.SticsStationConverter()
-                r2 = stationconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, rap, var, prof, usmdir)         
-                soiltable[soilid] = [r1, r2]
+                r2 = stationconverter.export(
+                    simPath, ModelDictionary_Connection,
+                    MasterInput_Connection, rap, var, prof, usmdir,
+                    parameter_resolver=parameter_resolver,
+                )
+                stationtable[stationid] = r2
                 del stationconverter  # Free converter
             else:
-                write_file(usmdir, "param.sol", soiltable[soilid][0])
-                write_file(usmdir, "station.txt", soiltable[soilid][1])
+                write_file(usmdir, "station.txt", stationtable[stationid])
                 write_file(usmdir, "prof.mod",  prof)
                 write_file(usmdir, "rap.mod",  rap)
                 write_file(usmdir, "var.mod",  var)
@@ -1045,7 +1070,12 @@ def process_chunk(*args):
             ])
             if tecid not in tectable:  
                 fictec1converter = sticsfictec1converter.SticsFictec1Converter()
-                r = fictec1converter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
+                r = fictec1converter.export(
+                    simPath, ModelDictionary_Connection,
+                    MasterInput_Connection, usmdir,
+                    irrigation_repository=irrigation_repository,
+                    parameter_resolver=parameter_resolver,
+                )
                 tectable[tecid] = r
                 del fictec1converter  # Free converter
             else:

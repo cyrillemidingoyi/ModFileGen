@@ -6,14 +6,17 @@ import pandas as pd
 class SticsStationConverter(Converter):
     def __init__(self):
         super().__init__()
+        self._parameter_resolver = None
+        self._point_id = None
+        self._point_parameters = None
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, rap, var, prof, usmdir, season_order=None):
+    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, rap, var, prof, usmdir, season_order=None, parameter_resolver=None):
         file_name = "station.txt"
         fileContent = ""
         ST = directory_path.split(os.sep)
         T = "Select  Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'sticsv11') And ([Table] = 'station'));"
         DT = pd.read_sql_query(T,ModelDictionary_Connection)
-        fetchAllQuery = """SELECT SimUnitList.idsim, Coordinates.altitude, Coordinates.latitudeDD FROM Coordinates INNER JOIN SimUnitList ON Coordinates.idPoint = SimUnitList.idPoint Where idsim ='%s';"""%(ST[-3])
+        fetchAllQuery = """SELECT SimUnitList.idsim, SimUnitList.idPoint, Coordinates.altitude, Coordinates.latitudeDD FROM Coordinates INNER JOIN SimUnitList ON Coordinates.idPoint = SimUnitList.idPoint Where idsim ='%s';"""%(ST[-3])
         DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
         rows = DA.to_dict(orient='records')
         
@@ -25,6 +28,14 @@ class SticsStationConverter(Converter):
         nbplantes = rows2[0]["MaxDePlantOrder"] or 1
             
         for row in rows:
+            self._parameter_resolver = parameter_resolver
+            self._point_id = row["idPoint"]
+            self._point_parameters = (
+                None if parameter_resolver is None else
+                parameter_resolver.resolve_point(
+                    "sticsv11", "station", self._point_id
+                )
+            )
             fileContent += self.FormatSticsData(DT, "zr")
             fileContent += self.FormatSticsData(DT, "NH3ref")
             fileContent += self.FormatSticsData(DT, "concrr", 2)
@@ -120,7 +131,7 @@ class SticsStationConverter(Converter):
             print(f"Error during writing file : {e}")
         return station
 
-    def  FormatSticsData(fileContent, row ,champ, precision = 5, fieldIt = 0):
+    def FormatSticsData(self, row, champ, precision=5, fieldIt=0):
         res = ""
         typedata = ""
         data = None
@@ -130,8 +141,16 @@ class SticsStationConverter(Converter):
         if fieldIt != 0:
             champ = champ + str(fieldIt) 
         # Fetch data
-        rw = row[row['Champ'] == champ]
-        data = rw["dv"].values[0]
+        if (
+            self._parameter_resolver is not None
+            and self._parameter_resolver.has_point_override(
+                "sticsv11", "station", champ, self._point_id
+            )
+        ):
+            data = self._point_parameters[champ.casefold()]
+        else:
+            rw = row[row['Champ'] == champ]
+            data = rw["dv"].values[0]
         res = ""
         # If type is string or int
         if isinstance(data, str) or isinstance(data, int):

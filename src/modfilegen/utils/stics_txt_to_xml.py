@@ -664,6 +664,16 @@ def _read_technical_txt(
                         raise ValueError(f"{path}: missing intervention row {row_number}")
                     row = lines[position].split()
                     position += 1
+                    # Native STICS technical files may repeat the table header
+                    # before every intervention rather than writing it once.
+                    if row_number > 1 and row == header:
+                        if position >= len(lines):
+                            raise ValueError(
+                                f"{path}: missing intervention row {row_number} "
+                                "after repeated header"
+                            )
+                        row = lines[position].split()
+                        position += 1
                     if len(row) != len(header):
                         raise ValueError(
                             f"{path}: intervention row {row_number} contains {len(row)} "
@@ -1209,30 +1219,61 @@ def generate_stics_summary_workbook(
         sheets["Soils"].append([row.get(name) for name in soil_headers])
 
     # Technical files and their intervention tables.
-    tec_headers = original_headers["Tec"]
+    tec_headers = list(original_headers["Tec"])
     tec_names = dict.fromkeys(
         plant.find("ftec").text for usm in usms for plant in usm.findall("plante")
         if plant.find("ftec") is not None and plant.find("ftec").text != "null"
     )
+    tec_rows: List[Dict[str, object]] = []
+    intervention_headers: List[str] = []
     for filename in tec_names:
         root = ET.parse(workspace / filename).getroot()
         row = {"Tec_name": filename}
         row.update(_xml_scalar_dict(root))
-        tables = list(root.iter("ta"))
-        if len(tables) >= 2:
-            for index, intervention in enumerate(tables[1].findall("intervention"), start=1):
-                for column in intervention.findall("colonne"):
-                    row[f"{column.get('nom')}_{index}"] = _spreadsheet_value(column.text)
-        if len(tables) >= 4:
-            for index, intervention in enumerate(tables[3].findall("intervention"), start=1):
-                columns = {c.get("nom"): c.text for c in intervention.findall("colonne")}
-                row[f"julapN_{index}"] = _spreadsheet_value(columns.get("julapN_or_sum_upvt"))
-                row[f"doseN_{index}"] = _spreadsheet_value(columns.get("absolute_value/%"))
-                row[f"engrais_{index}"] = _spreadsheet_value(columns.get("engrais"))
-        for table in tables[4:6]:
+        for table in root.iter("ta"):
+            table_name = (table.get("nom") or "").strip().casefold()
+            aliases = (
+                {
+                    "julapi_or_sum_upvt": "julapI",
+                    "amount": "doseI",
+                }
+                if table_name == "water inputs"
+                else {
+                    "julapn_or_sum_upvt": "julapN",
+                    "absolute_value/%": "doseN",
+                    "engrais": "engrais",
+                }
+                if table_name == "mineral nitrogen inputs"
+                else {}
+            )
             for index, intervention in enumerate(table.findall("intervention"), start=1):
                 for column in intervention.findall("colonne"):
-                    row[f"{column.get('nom')}_{index}"] = _spreadsheet_value(column.text)
+                    source_name = column.get("nom")
+                    output_name = aliases.get(
+                        (source_name or "").casefold(), source_name
+                    )
+                    if not output_name:
+                        continue
+                    header = f"{output_name}_{index}"
+                    row[header] = _spreadsheet_value(column.text)
+                    if header not in intervention_headers:
+                        intervention_headers.append(header)
+        tec_rows.append(row)
+
+    dynamic_tec_headers = [
+        header for header in intervention_headers if header not in tec_headers
+    ]
+    if dynamic_tec_headers:
+        tec_headers.extend(dynamic_tec_headers)
+        tec_sheet = sheets["Tec"]
+        for column_number, header in enumerate(tec_headers, start=1):
+            cell = tec_sheet.cell(1, column_number, header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1F4E78")
+        tec_sheet.auto_filter.ref = (
+            f"A1:{tec_sheet.cell(1, len(tec_headers)).coordinate}"
+        )
+    for row in tec_rows:
         sheets["Tec"].append([row.get(name) for name in tec_headers])
 
     station_headers = original_headers["Station"]
