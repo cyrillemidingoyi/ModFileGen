@@ -76,3 +76,24 @@ def transform_summary_dataframe(
         if column in result.columns:
             result[column] = pd.to_numeric(result[column], errors="coerce")
     return result[list(output_configuration.summary_columns(selection))]
+
+
+def append_canonical_summary_csv(
+    dataframe,
+    result_path,
+    output_configuration,
+    selection="legacy",
+    model="celsius",
+    write_header=True,
+):
+    """Transform one raw CELSIUS batch and append it to a canonical CSV."""
+    summary = transform_summary_dataframe(
+        dataframe, output_configuration, selection, model
+    )
+    summary.to_csv(
+        result_path,
+        mode="a",
+        header=write_header,
+        index=False,
+    )
+    return summary
