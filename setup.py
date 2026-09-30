@@ -38,7 +38,7 @@ data_rel_pth = lambda pth: normpath(abspath(pth))[nb:]
 data_files = []
 for root, dnames, fnames in walk("src/modfilegen"):
     for name in fnames:
-        if splitext(name)[-1] in [u'.json', u'.xml', u'.ini', u".sh", u".shp"]:
+        if splitext(name)[-1] in [u'.json', u'.xml', u'.ini', u".sh", u".shp", u".yml"]:
             data_files.append(data_rel_pth(pj(root, name)))
 
 

@@ -7,6 +7,7 @@
 numpy>=1.26  # Compatible with numpy 2.x
 pandas>=1.5
 joblib>=1.0
+PyYAML>=6.0
 
 # run examples
 

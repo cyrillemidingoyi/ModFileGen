@@ -1,5 +1,7 @@
 from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
+from modfilegen.output_configuration import OutputConfiguration
+from .summary_output import build_rap_mod, transform_summary_dataframe
 from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailconverter, sticsparamsolconverter
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
@@ -51,7 +53,8 @@ def create_df_summary(f, dt):
     remove_comma(f)
     if dt == 1: c = get_coord(d_name)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
-    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
+    df.columns = [column.strip() for column in df.columns]
+    df = df.reset_index(drop=True)
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
@@ -104,29 +107,9 @@ def create_df_profile(profile_file, idsim):
 
 
 
-def common_rap():
-    fileContent = ""
-    fileContent += "1\n"
-    fileContent += "1\n"
-    fileContent += "2\n"
-    fileContent += "1\n"
-    fileContent += "rec\n"
-    fileContent += "masec(n)\n"
-    fileContent += "mafruit\n"
-    fileContent += "chargefruit\n"
-    fileContent += "iplts\n"
-    fileContent += "ilevs\n"
-    fileContent += "iflos\n"
-    fileContent += "imats\n"
-    fileContent += "irecs\n"
-    fileContent += "laimax\n"
-    fileContent += "QNplante\n"
-    fileContent += "Qles\n"
-    fileContent += "QNapp\n" #'    fileContent += "soilN\n"
-    fileContent += "ces\n"
-    fileContent += "cep\n"
-    return fileContent
-    
+common_rap = build_rap_mod
+
+
 def common_prof():
     fileContent = ""
     fileContent += "2\n"
@@ -1300,18 +1283,26 @@ def main():
     if not mi or not md:
         raise ValueError("dbMasterInput and dbModelsDictionary must be set in GlobalVariables")
 
+    output_configuration = OutputConfiguration.from_files(
+        GlobalVariables.get("outputVariablesConfig"),
+        GlobalVariables.get("outputSelectionsConfig"),
+        GlobalVariables.get("profileVariablesConfig"),
+    )
+    output_selection = GlobalVariables.get("outputSelection", "legacy")
+
     os.makedirs(directoryPath, exist_ok=True)
     os.makedirs(tempDir, exist_ok=True)
     
     stics_params = os.path.join(package, "data", "stics_params")
     if not os.path.exists(stics_params):
-        rap = common_rap()
+        rap = common_rap(output_configuration, output_selection)
         var = common_var()
         prof = common_prof()
     else:
         rapfile = os.path.join(stics_params, "rap.mod")
         with open(rapfile, "r") as f:
-            rap = f.read()
+            rap_template = f.read()
+        rap = common_rap(output_configuration, output_selection, rap_template)
         varfile = os.path.join(stics_params, "var.mod")
         with open(varfile, "r") as f:
             var = f.read()
@@ -1335,6 +1326,12 @@ def main():
                 completed.update(chunk["Idsim"].astype(str).unique())
             data = [row for row in data if row['Idsim'] not in completed]
             print(f"Remaining simulations to process: {len(data)}", flush=True)
+        else:
+            result_name = str(uuid.uuid4()) + "_stics"
+            result_path = os.path.join(directoryPath, f"{result_name}.csv")
+            while os.path.exists(result_path):
+                result_name = str(uuid.uuid4()) + "_stics"
+                result_path = os.path.join(directoryPath, f"{result_name}.csv")
     else:
         # create a random name
         result_name = str(uuid.uuid4()) + "_stics"
@@ -1343,6 +1340,31 @@ def main():
             result_name = str(uuid.uuid4()) + "_stics"
             result_path = os.path.join(directoryPath, f"{result_name}.csv")
         
+    existing_canonical_summary = None
+    if dt == 0 and resume_stics == 1 and isinstance(result_path, str) and os.path.exists(result_path):
+        existing_result = pd.read_csv(result_path)
+        configured_source_fields = {
+            field
+            for variable in output_configuration.selected_variables(
+                output_selection, "stics", include_unavailable=False
+            )
+            for field in output_configuration.source_fields(variable.key, "stics")
+        }
+        if configured_source_fields.intersection(existing_result.columns):
+            existing_canonical_summary = transform_summary_dataframe(
+                existing_result, output_configuration, output_selection
+            )
+        else:
+            existing_canonical_summary = existing_result.reindex(
+                columns=output_configuration.summary_columns(output_selection)
+            )
+
+    working_result_path = result_path
+    if dt == 0:
+        working_result_path = result_path + ".raw"
+        if os.path.exists(working_result_path):
+            os.remove(working_result_path)
+
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     n_simulations = len(data)
@@ -1402,7 +1424,7 @@ def main():
             if os.path.exists(tmp_path):
                 mem_peak_before2 = proc.memory_info().rss / 1024**2
                 df = pd.read_csv(tmp_path)
-                df.to_csv(result_path, mode="a", header=write_header, index=False)
+                df.to_csv(working_result_path, mode="a", header=write_header, index=False)
                 write_header = False
                 total_chunks_written += 1
 
@@ -1468,21 +1490,36 @@ def main():
         print(f"STICS total time: {time()-start:.2f}s", flush=True)
 
         if dt == 0:
-            summary_cols = ["Model", "Idsim", "Texte", "Planting", "Emergence", "Ant", "Mat",
-                            "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac", "SoilN",
-                            "CroN_ma", "CumE", "Transp"]
-            df_result = pd.read_csv(result_path, usecols=lambda c: c in summary_cols)
-            for col in summary_cols:
-                if col not in df_result.columns:
-                    df_result[col] = None
-            df_result = df_result[summary_cols]
-            _conn = sqlite3.connect(mi)
-            _conn.execute("DELETE FROM SummaryOutput WHERE Model = 'Stics'")
-            _conn.commit()
-            df_result.to_sql("SummaryOutput", _conn, if_exists="append", index=False)
-            _conn.commit()
-            _conn.close()
+            raw_summary = pd.read_csv(working_result_path)
+            df_result = transform_summary_dataframe(
+                raw_summary, output_configuration, output_selection
+            )
+            if existing_canonical_summary is not None:
+                df_result = pd.concat(
+                    [existing_canonical_summary, df_result], ignore_index=True
+                )
+            df_result.to_csv(result_path, index=False)
+            os.remove(working_result_path)
+            with sqlite3.connect(mi) as summary_connection:
+                added_columns = output_configuration.ensure_summary_output_schema(
+                    summary_connection, output_selection
+                )
+                summary_connection.execute(
+                    "DELETE FROM SummaryOutput WHERE lower(Model) = 'stics'"
+                )
+                df_result.to_sql(
+                    output_configuration.summary_table,
+                    summary_connection,
+                    if_exists="append",
+                    index=False,
+                )
+            if added_columns:
+                print(
+                    "SummaryOutput columns added: " + ", ".join(added_columns),
+                    flush=True,
+                )
             print(f"✅ {len(df_result)} rows inserted into SummaryOutput.", flush=True)
+            del raw_summary
             del df_result
 
     except Exception as ex:  

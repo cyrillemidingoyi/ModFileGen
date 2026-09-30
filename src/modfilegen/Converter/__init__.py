@@ -59,7 +59,29 @@ def run_apsim():
 
 
 def run_celsius():
-    return import_module(
-        "modfilegen.Converter.CelsiusConverter.celsiusconverter"
-    ).main()
+    version = str(
+        GlobalVariables.get("celsius_version", "v3")
+    ).strip().lower()
+    mode = str(
+        GlobalVariables.get("celsius_mode", "standard")
+    ).strip().lower()
+    modules = {
+        ("v3", "standard"): "modfilegen.Converter.CelsiusConverter.celsiusconverter",
+        ("3", "standard"): "modfilegen.Converter.CelsiusConverter.celsiusconverter",
+        ("v32", "standard"): "modfilegen.Converter.CelsiusV32Converter.celsiusv32converter",
+        ("32", "standard"): "modfilegen.Converter.CelsiusV32Converter.celsiusv32converter",
+        ("v32", "successive"): "modfilegen.Converter.CelsiusV32Converter.celsiusv32successiveconverter",
+        ("32", "successive"): "modfilegen.Converter.CelsiusV32Converter.celsiusv32successiveconverter",
+    }
+    if version not in {"v3", "3", "v32", "32"}:
+        raise ValueError(
+            "GlobalVariables['celsius_version'] must be 'v3' or 'v32'"
+        )
+    if mode not in {"standard", "successive"}:
+        raise ValueError(
+            "GlobalVariables['celsius_mode'] must be 'standard' or 'successive'"
+        )
+    if (version, mode) not in modules:
+        raise ValueError("CELSIUS successive mode is supported only for V32")
+    return import_module(modules[(version, mode)]).main()
 

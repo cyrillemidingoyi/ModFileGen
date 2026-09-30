@@ -1,0 +1,41 @@
+# Variables variant simultanement avec le temps et la profondeur du sol.
+# Le format long accepte un nombre variable de couches.
+
+version: 1
+output:
+  table: SticsProfileOutput
+  format: long
+  identity_columns:
+    Model: TEXT
+    Idsim: TEXT
+    SeasonOrder: INTEGER
+    PlantOrder: INTEGER
+    Texte: TEXT
+    jul: INTEGER
+    depth_cm: REAL
+    variable: TEXT
+    value: REAL
+variables:
+  soil_temperature:
+    description: Temperature du sol par profondeur
+    type: REAL
+    unit: degC
+    models:
+      stics:
+        configuration_file: prof.mod
+        field: tsol(iz)
+        output_file: mod_profil.sti
+        source_unit: degC
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        configuration_file: prof.mod
+        field: tsol
+        output_file: mod_profil.sti
+        source_unit: degC
+        scale: 1.0
+        offset: 0.0
+        status: verified
+metadata_sources:
+  stics: /home/midingoyi/projects_other/modulostics/doc/profil.csv
