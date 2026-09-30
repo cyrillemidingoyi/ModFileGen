@@ -106,3 +106,33 @@ def transform_summary_dataframe(dataframe, output_configuration, selection="lega
         )
 
     return result[list(output_configuration.summary_columns(selection))]
+
+
+def write_canonical_summary_csv(
+    raw_path,
+    result_path,
+    output_configuration,
+    selection="legacy",
+    existing_summary=None,
+):
+    """Transform raw rows and write one canonical STICS result CSV."""
+    frames = []
+    if existing_summary is not None and not existing_summary.empty:
+        frames.append(
+            existing_summary.reindex(
+                columns=output_configuration.summary_columns(selection)
+            )
+        )
+    if raw_path is not None:
+        raw = pd.read_csv(raw_path)
+        frames.append(
+            transform_summary_dataframe(raw, output_configuration, selection)
+        )
+    if frames:
+        result = pd.concat(frames, ignore_index=True)
+    else:
+        result = pd.DataFrame(
+            columns=output_configuration.summary_columns(selection)
+        )
+    result.to_csv(result_path, index=False)
+    return result
