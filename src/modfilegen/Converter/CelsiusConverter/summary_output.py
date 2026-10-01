@@ -1,8 +1,52 @@
 """Transform CELSIUS synthesis outputs through the shared output catalogue."""
 
+import re
+
 import pandas as pd
 
 from modfilegen.output_configuration import OutputConfigurationError
+
+
+_SPATIAL_ID = re.compile(
+    r"^(?P<lat>-?\d+(?:\.\d+)?)_"
+    r"(?P<lon>-?\d+(?:\.\d+)?)_"
+    r"(?P<year>\d{4})(?:_|$)"
+)
+
+
+def add_spatial_time_columns(dataframe, dt):
+    """Extract latitude, longitude and year from CELSIUS Idsim for dt=1."""
+    result = dataframe.copy()
+    if int(dt) != 1:
+        return result
+    id_column = next(
+        (column for column in result.columns if str(column).lower() == "idsim"),
+        None,
+    )
+    if id_column is None:
+        raise OutputConfigurationError(
+            "CELSIUS dt=1 requires an Idsim column to extract lon, lat and time"
+        )
+
+    coordinates = []
+    for identifier in result[id_column].astype(str):
+        match = _SPATIAL_ID.match(identifier)
+        if match is None:
+            raise OutputConfigurationError(
+                "CELSIUS dt=1 cannot extract latitude, longitude and year "
+                f"from Idsim {identifier!r}; expected lat_lon_year_..."
+            )
+        coordinates.append(
+            (
+                float(match.group("lon")),
+                float(match.group("lat")),
+                int(match.group("year")),
+            )
+        )
+    result["lon"] = [value[0] for value in coordinates]
+    result["lat"] = [value[1] for value in coordinates]
+    result["time"] = [value[2] for value in coordinates]
+    return result
 
 
 def transform_summary_dataframe(
@@ -85,8 +129,10 @@ def append_canonical_summary_csv(
     selection="legacy",
     model="celsius",
     write_header=True,
+    dt=0,
 ):
     """Transform one raw CELSIUS batch and append it to a canonical CSV."""
+    dataframe = add_spatial_time_columns(dataframe, dt)
     summary = transform_summary_dataframe(
         dataframe, output_configuration, selection, model
     )
