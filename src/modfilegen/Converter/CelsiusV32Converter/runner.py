@@ -13,6 +13,7 @@ import pandas as pd
 from modfilegen import GlobalVariables
 from modfilegen.output_configuration import OutputConfiguration
 from modfilegen.Converter.CelsiusConverter.summary_output import (
+    add_spatial_time_columns,
     transform_summary_dataframe,
 )
 
@@ -59,6 +60,9 @@ def _summary_dataframe(celsius_database, output_configuration, output_selection)
     outputs["Idsim"] = original_ids
     outputs["SeasonOrder"] = season_orders
     outputs["PlantOrder"] = 1
+    outputs = add_spatial_time_columns(
+        outputs, GlobalVariables.get("dt", 1)
+    )
     return transform_summary_dataframe(
         outputs,
         output_configuration,
