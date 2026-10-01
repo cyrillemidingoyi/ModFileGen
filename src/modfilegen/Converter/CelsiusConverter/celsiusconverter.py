@@ -29,7 +29,6 @@ import concurrent.futures
 from joblib import Parallel, delayed
 
 
-
 def create_idJourClim(df):
     return df['IdDClim'].astype(str) + '.' + df['annee'].astype(str) + '.' + df['jda'].astype(str)
 
@@ -248,6 +247,7 @@ def main():
                     output_selection,
                     model="celsius",
                     write_header=write_csv_header,
+                    dt=dt,
                 )
                 write_csv_header = False
 
