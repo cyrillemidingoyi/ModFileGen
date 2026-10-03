@@ -1,0 +1,5 @@
+RunoffType,param1,RunoffText,CodRunoffCelsius,RunoffCoefBSoil,CurveNumber
+1,NULL,no runoff,1,0.0,30
+2,NULL,moderate runoff,6,0.2,70
+3,NULL,substancial runoff,7,0.35,80
+4,NULL,very high runoff,9,0.6,90

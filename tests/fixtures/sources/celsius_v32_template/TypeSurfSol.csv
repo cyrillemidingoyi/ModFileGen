@@ -1,0 +1,13 @@
+TypeRui,TexteRui,Ap1,seuil_ruis,Ap2,Ap3,Ap4,comment,effetLAI
+1,Pas de ruissellement,0.0,0.0,0.0,0.0,0.0,NULL,1
+2,Pas d'effet d'antériorité des pluies,0.3,30.0,0.0,0.0,0.0,%rui=30 (=Ap1*100) seuil =30,1
+3,Pas d'effet d'antériorité des pluies,0.24,20.0,0.0,0.0,0.0,%rui=24(=Ap1*100) seuil=20,1
+4,Pas d'effet d'antériorité des pluies,0.2,30.0,0.0,0.0,0.0,"%rui=20(=Ap1*100), seuil=30",1
+5,Pas d'effet d'antériorité des pluies,0.3,20.0,0.0,0.0,0.0,"%rui=30(=Ap1*100), seuil=20",1
+6,porosité vésiculaire type 1 C1,0.2,0.0,0.03,0.004,3.0,NULL,1
+7,porosité vésiculaire type 2 C2,0.35,0.0,0.04,0.004,3.0,NULL,1
+8,porosité vésiculaire type ?,0.77,0.0,-0.62,0.01,0.56,NULL,1
+9,porosité vésiculaire type 3,0.9,0.0,0.05,0.002,10.0,NULL,1
+10,NULL,0.6,0.0,0.05,0.002,10.0,NULL,1
+11,NULL,0.7,0.0,0.05,0.002,10.0,NULL,1
+12,NULL,0.5,15.0,0.0,0.0,0.0,NULL,0

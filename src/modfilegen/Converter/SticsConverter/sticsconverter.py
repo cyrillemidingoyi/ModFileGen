@@ -1,4 +1,5 @@
 from modfilegen import GlobalVariables
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import (
@@ -10,7 +11,6 @@ from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailcon
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
 import subprocess
-import re
 import os
 import sqlite3
 from sqlite3 import Connection
@@ -32,13 +32,6 @@ SUMMARY_COLS = ["Model","Idsim","Texte","Planting","Emergence","Ant","Mat","Biom
 DAILY_OUTPUT_TABLE = "SticsDailyOutput"
 PROFILE_OUTPUT_TABLE = "SticsProfile"
 
-def get_coord(d):
-    res = re.findall(r"([-]?\d+[.]?\d+)[_]", d)
-    lat = float(res[0])
-    lon = float(res[1])
-    year = int(float(res[2]))
-    return {'lon': lon, 'lat': lat, 'year': year}
-
 def remove_comma(f):
     try:
         with open(f, "r") as fil:
@@ -51,11 +44,10 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
     
-def create_df_summary(f, dt):
+def create_df_summary(f, coordinates):
     #d_name = os.path.dirname(f).split(os.path.sep)[-1]
     d_name = Path(f).stem[len("mod_rapport_"):]
     remove_comma(f)
-    if dt == 1: c = get_coord(d_name)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
     df.columns = [column.strip() for column in df.columns]
     df = df.reset_index(drop=True)
@@ -63,9 +55,8 @@ def create_df_summary(f, dt):
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
     df['time'] = df['ansemis'].astype(float).astype(int)
-    if dt == 1:
-        df['lon'] = c['lon']
-        df['lat'] = c['lat']
+    df['lon'] = coordinates.longitude
+    df['lat'] = coordinates.latitude
     return df
 
 
@@ -922,6 +913,8 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+    coordinate_resolver = CoordinateResolver(MasterInput_Connection)
+    coordinate_resolver.prefetch(row["idPoint"] for row in chunk)
     
     dataframes = []
         
@@ -1050,7 +1043,9 @@ def process_chunk(*args):
             if not os.path.exists(mod_r):
                 print(f"Warning: {mod_r} does not exist")
                 continue
-            df = create_df_summary(mod_r, dt)
+            df = create_df_summary(
+                mod_r, coordinate_resolver.resolve(row["idPoint"])
+            )
             dataframes.append(df)
 
             if dailyoutput == 1:

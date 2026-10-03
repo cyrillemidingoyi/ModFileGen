@@ -19,6 +19,7 @@ from pathlib import Path
 from time import time
 import subprocess
 from modfilegen import GlobalVariables
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import append_canonical_summary_csv
@@ -191,6 +192,17 @@ def main():
         result_path = os.path.join(directoryPath, f"{uuid.uuid4()}_celsius.csv")
     
     data = fetch_data_from_sqlite(mi)
+    with sqlite3.connect(mi) as coordinate_connection:
+        coordinate_resolver = CoordinateResolver(coordinate_connection)
+        coordinate_resolver.prefetch(row["idPoint"] for row in data)
+        simulation_context = {}
+        for row in data:
+            coordinates = coordinate_resolver.resolve(row["idPoint"])
+            simulation_context[str(row["idsim"])] = {
+                "lat": coordinates.latitude,
+                "lon": coordinates.longitude,
+                "time": int(row["StartYear"]),
+            }
     print(f"📊 Total simulations to process: {len(data)}", flush=True)
     
     # Split data into chunks
@@ -247,7 +259,7 @@ def main():
                     output_selection,
                     model="celsius",
                     write_header=write_csv_header,
-                    dt=dt,
+                    simulation_context=simulation_context,
                 )
                 write_csv_header = False
 

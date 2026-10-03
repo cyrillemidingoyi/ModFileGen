@@ -11,6 +11,7 @@ import uuid
 import pandas as pd
 
 from modfilegen import GlobalVariables
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.output_configuration import OutputConfiguration
 from modfilegen.Converter.CelsiusConverter.summary_output import (
     add_spatial_time_columns,
@@ -29,7 +30,9 @@ def _output_configuration():
     return configuration, GlobalVariables.get("outputSelection", "legacy")
 
 
-def _summary_dataframe(celsius_database, output_configuration, output_selection):
+def _summary_dataframe(
+    master, celsius_database, output_configuration, output_selection
+):
     with sqlite3.connect(celsius_database) as source:
         outputs = pd.read_sql_query(
             """
@@ -60,9 +63,21 @@ def _summary_dataframe(celsius_database, output_configuration, output_selection)
     outputs["Idsim"] = original_ids
     outputs["SeasonOrder"] = season_orders
     outputs["PlantOrder"] = 1
-    outputs = add_spatial_time_columns(
-        outputs, GlobalVariables.get("dt", 1)
-    )
+    with sqlite3.connect(master) as source:
+        simulations = pd.read_sql_query(
+            "SELECT idsim, idPoint, StartYear FROM SimUnitList", source
+        ).to_dict(orient="records")
+        resolver = CoordinateResolver(source)
+        resolver.prefetch(row["idPoint"] for row in simulations)
+        simulation_context = {}
+        for simulation in simulations:
+            coordinates = resolver.resolve(simulation["idPoint"])
+            simulation_context[str(simulation["idsim"])] = {
+                "lat": coordinates.latitude,
+                "lon": coordinates.longitude,
+                "time": int(simulation["StartYear"]),
+            }
+    outputs = add_spatial_time_columns(outputs, simulation_context)
     return transform_summary_dataframe(
         outputs,
         output_configuration,
@@ -96,7 +111,7 @@ def _import_summary(master, celsius_database):
     """Backward-compatible import of canonical CELSIUS V32 synthesis rows."""
     output_configuration, output_selection = _output_configuration()
     summary = _summary_dataframe(
-        celsius_database, output_configuration, output_selection
+        master, celsius_database, output_configuration, output_selection
     )
     _store_summary(master, summary, output_configuration, output_selection)
     return summary
@@ -351,7 +366,7 @@ def run(mode):
         run_model(output, executable, workers)
         output_configuration, output_selection = _output_configuration()
         summary = _summary_dataframe(
-            output, output_configuration, output_selection
+            master, output, output_configuration, output_selection
         )
         result_directory = (
             GlobalVariables.get("directorypath")

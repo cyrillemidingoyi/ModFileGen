@@ -1,0 +1,6 @@
+idMulch,nomtype,gamma_mulch,CapaciteWMulch,alpha_pail,Beta_pail,b_ruis
+1,0 mulch,0.0,0.0,0.0,0.0,0.0
+2,mulch maïs frais,0.2403,2.2,0.00702,0.367,-0.01
+3,mulch maïs 0 ruiss,0.2403,2.2,0.00702,0.367,0.0
+4,PailleMil,0.2403,2.2,0.00702,0.367,-0.01
+5,PailleRiz,0.2403,2.2,0.00702,0.367,-0.01
