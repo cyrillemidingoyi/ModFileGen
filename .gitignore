@@ -25,6 +25,11 @@ wheels/
 .installed.cfg
 *.egg
 owner/
+/tests/*
+!/tests/__init__.py
+!/tests/conftest.py
+!/tests/test_*.py
+!/tests/fixtures/
 /data/
 /tests/data/*
 !/tests/data/MasterInput_bon_test.db
@@ -121,3 +126,4 @@ ENV/
 # IDE settings
 .vscode/
 .idea/
+migrations/
