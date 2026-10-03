@@ -7,12 +7,16 @@ git diff:
   ``CREATE INDEX`` statements;
 * ``sources/<fixture>/<Table>.csv`` holds the rows of each table.
 
-Two fixtures exist:
+Three fixtures exist:
 
 ``masterinput``
     The MasterInput input tables. Output tables (``SummaryOutput``,
     ``*DailyOutput``, ``SticsProfile``) are left out: their columns depend on
     the output configuration and the converters create them when missing.
+
+``modelsdictionary``
+    Only the ``Variables`` table of ModelsDictionary, the one the converters
+    read.
 
 ``celsius_v32_template``
     The CELSIUS V32 model database used as conversion template. Reference
@@ -49,6 +53,8 @@ FIXTURES_DIR = Path(__file__).resolve().parent
 SOURCES_DIR = FIXTURES_DIR / "sources"
 MASTERINPUT_SOURCES = SOURCES_DIR / "masterinput"
 CELSIUS_V32_TEMPLATE_SOURCES = SOURCES_DIR / "celsius_v32_template"
+MODELSDICTIONARY_SOURCES = SOURCES_DIR / "modelsdictionary"
+MODELSDICTIONARY_TABLES = {"variables"}
 
 NULL_MARKER = "NULL"
 OUTPUT_TABLES = {"summaryoutput", "sticsprofile"}
@@ -196,6 +202,18 @@ def build_masterinput(out_db, sources_dir=MASTERINPUT_SOURCES):
     return build_database(out_db, sources_dir)
 
 
+def export_modelsdictionary(source_db, sources_dir=MODELSDICTIONARY_SOURCES):
+    return export_database(
+        source_db,
+        sources_dir,
+        skip_table=lambda name: name.lower() not in MODELSDICTIONARY_TABLES,
+    )
+
+
+def build_modelsdictionary(out_db, sources_dir=MODELSDICTIONARY_SOURCES):
+    return build_database(out_db, sources_dir)
+
+
 def export_celsius_v32_template(source_db, sources_dir=CELSIUS_V32_TEMPLATE_SOURCES):
     return export_database(
         source_db, sources_dir, row_limit=celsius_v32_template_row_limit
@@ -208,6 +226,11 @@ def build_celsius_v32_template(out_db, sources_dir=CELSIUS_V32_TEMPLATE_SOURCES)
 
 FIXTURES = {
     "masterinput": (export_masterinput, build_masterinput, MASTERINPUT_SOURCES),
+    "modelsdictionary": (
+        export_modelsdictionary,
+        build_modelsdictionary,
+        MODELSDICTIONARY_SOURCES,
+    ),
     "celsius_v32_template": (
         export_celsius_v32_template,
         build_celsius_v32_template,
