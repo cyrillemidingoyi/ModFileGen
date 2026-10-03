@@ -13,6 +13,7 @@ CONFIGURATION (in GlobalVariables):
 """
 
 from modfilegen import GlobalVariables
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import transform_summary_dataframe
@@ -30,7 +31,6 @@ import pandas as pd
 from time import time
 import traceback
 from joblib import Parallel, delayed, parallel_backend   
-import re
 import gc
 import calendar
 
@@ -62,21 +62,11 @@ def extract_corrected_doy(date_col, ys):
     return doy + correction
 
 
-def get_coord(d):
-    res = re.findall(r"(-?\d+(?:\.\d+)?)_", d)
-    lat = float(res[0])
-    lon = float(res[1])
-    year = int(float(res[2]))
-    return {'lon': lon, 'lat': lat, 'year': year}
-
-
-def transform(fil, dt):
+def transform(fil, coordinates, simulation_year):
     with open(fil, "r") as fil_:
         FILE = fil_.readlines()
     #d_name = os.path.dirname(fil).split(os.path.sep)[-1]
     d_name = Path(fil).stem[len("Summary_"):]
-    if dt == 1:
-        c = get_coord(d_name)
     outData = FILE[4:]
     varId = FILE[3]					# Read the raw variables
     varId = list(map(str, str.split(varId[1:])[13:]))		# Only get the useful variables
@@ -89,10 +79,9 @@ def transform(fil, dt):
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
 
-    if dt == 1:
-        df['lon'] = c['lon']
-        df['lat'] = c['lat']
-        df['time'] = int(c['year'])
+    df['lon'] = coordinates.longitude
+    df['lat'] = coordinates.latitude
+    df['time'] = int(simulation_year)
 
     return df
 
@@ -230,6 +219,8 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+    coordinate_resolver = CoordinateResolver(MasterInput_Connection)
+    coordinate_resolver.prefetch(row["idPoint"] for row in chunk)
         
     for i, row in enumerate(chunk):
         write_header = not os.path.exists(tmp_csv)
@@ -336,7 +327,8 @@ def process_chunk(*args):
             if not os.path.exists(summary):
                 print(f"Summary file {summary} not found.")
                 continue
-            df = transform(summary, dt)
+            coordinates = coordinate_resolver.resolve(row["idPoint"])
+            df = transform(summary, coordinates, row["StartYear"])
             df.to_csv(tmp_csv, mode='a', header=write_header, index=False)
             if dailyoutput == 1:
                 expected_output_files = {

@@ -1,0 +1,17 @@
+SoilTextureType,Silt,Sand,Clay,USDAcode,IBSNATCode
+Clay,20.0,10.0,70.0,1,CL
+Clay ETBA,45.0,10.0,46.0,1,CL
+clay loam,33.0,34.0,33.0,4,CLLO
+Clay ZIMU,40.0,38.0,22.0,1,CL
+loam,39.0,44.0,17.0,7,LO
+Loamy Sand,15.0,78.0,7.0,11,LOSA
+Loamy Sand BEOU,15.0,82.0,3.0,11,LOSA
+Loamy Sand MANT,15.0,81.0,4.0,11,LOSA
+Sand,7.0,88.0,5.0,12,SA
+sandy clay,10.0,45.0,45.0,3,SACL
+sandy clay loam,14.0,59.0,27.0,6,SACLL
+Sandy loam,25.0,65.0,10.0,9,SALO
+silt,94.0,0.0,6.0,10,SI
+silty clay,50.0,0.0,50.0,2,SICL
+silty clay loam,56.0,10.0,34.0,5,SICLL
+silty loam,81.0,6.0,13.0,8,SILO

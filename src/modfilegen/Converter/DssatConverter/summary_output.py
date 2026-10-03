@@ -16,7 +16,9 @@ def _missing(value):
         return False
 
 
-def transform_summary_dataframe(dataframe, output_configuration, selection="legacy"):
+def transform_summary_dataframe(
+    dataframe, output_configuration, selection="legacy", mode="standard"
+):
     """Map DSSAT ``Summary.OUT`` fields to configured shared columns.
 
     Mappings backed by other DSSAT output modules are intentionally returned as
@@ -78,8 +80,8 @@ def transform_summary_dataframe(dataframe, output_configuration, selection="lega
             ):
                 return float("nan")
             combined = output_configuration.combine_values(key, "dssat", values)
-            reference = row.get("PDAT")
-            context = {"mode": "standard"}
+            reference = row.get("SDAT" if mode == "successive" else "PDAT")
+            context = {"mode": mode}
             if not _missing(reference):
                 context["reference_year"] = int(float(reference)) // 1000
             return output_configuration.convert_value(
