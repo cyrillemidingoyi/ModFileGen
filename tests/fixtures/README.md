@@ -12,6 +12,9 @@ fixtures/
     masterinput/
       schema.sql             CREATE TABLE and CREATE INDEX of the input tables
       <Table>.csv            rows of each input table
+    modelsdictionary/        ModelsDictionary, Variables table only
+      schema.sql
+      Variables.csv
     celsius_v32_template/    CELSIUS V32 model database used as template
       schema.sql
       <Table>.csv
@@ -37,11 +40,13 @@ columns depend on the output configuration.
 
 ## Using the fixture in tests
 
-`tests/conftest.py` provides three pytest fixtures:
+`tests/conftest.py` provides four pytest fixtures:
 
 - `masterinput_db`: the MasterInput database built once per session. Treat
   it as read-only.
 - `masterinput_copy`: a private copy for a test that writes to the database.
+- `modelsdictionary_db`: the ModelsDictionary built once per session, with
+  only the `Variables` table that the converters read. Treat it as read-only.
 - `celsius_v32_template_db`: the CELSIUS V32 template built once per session.
   Treat it as read-only; copy it before converting into it.
 
@@ -74,6 +79,7 @@ This overwrites `schema.sql` and every CSV file.
 | 2026-10-03 | `migrations/20260911_add_soil_ssat.sql` and `migrations/20261003_align_masterinput_with_lowinput_schema.sql` | Schema aligned with the reference input schema of `LowInput/blindphase_corrected/MasterInput.db`: `SeasonYearOffset` replaces `SowingYearOffset`, `Soil.Ssat`, `InitialConditions.option` (`simple`) and `NH4initf`, new `InitialConditionsLayers` and `dailyobs` tables (empty), `RAclimateD.rhum` as REAL plus `vapeurp` and `co2`. New values are NULL except `option`. |
 | 2026-10-04 | MasterInput `ListCultivars` | `testcult` and `testcult2` map to the CELSIUS V32 cultivars `20.1` (maize OPV_BEOU) and `2.1` (peanut ara28-206). |
 | 2026-10-04 | `tests/dssatsuccessive/celsius_model_input.db` | Initial export of the CELSIUS V32 template (24 tables, 81 cultivars), reduced as described above. |
+| 2026-10-04 | `LowInput/blindphase_corrected/ModelsDictionaryArise.db` | Initial export of the `Variables` table (3069 rows); the other tables of that database are not read by the converters. |
 
 The initial content covers: one point and one soil, years 2000 to 2002,
 4 simulations, successive seasons, two-crop association, non-zero irrigation,

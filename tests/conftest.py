@@ -8,7 +8,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures"))
 
-from build_fixtures import build_celsius_v32_template, build_masterinput  # noqa: E402
+from build_fixtures import (  # noqa: E402
+    build_celsius_v32_template,
+    build_masterinput,
+    build_modelsdictionary,
+)
 
 
 @pytest.fixture(scope="session")
@@ -18,6 +22,14 @@ def masterinput_db(tmp_path_factory):
     Treat it as read-only; use ``masterinput_copy`` in tests that write.
     """
     return build_masterinput(tmp_path_factory.mktemp("fixtures") / "MasterInput.db")
+
+
+@pytest.fixture(scope="session")
+def modelsdictionary_db(tmp_path_factory):
+    """ModelsDictionary (``Variables`` table only) built once per session. Read-only."""
+    return build_modelsdictionary(
+        tmp_path_factory.mktemp("fixtures") / "ModelsDictionary.db"
+    )
 
 
 @pytest.fixture(scope="session")

@@ -167,6 +167,11 @@ The result depends on the model mapping and source file:
   must be enabled and parsed before its fields can be populated.
 * CELSIUS selects and transforms fields already produced in ``OutputSynt``.
 
+For CELSIUS v3 and v32, ``OutputSynt`` remains the raw model output and
+ModFileGen also writes a canonical ``*_celsius.csv`` file for every completed
+run. This CSV is produced for both values of ``dt``. Setting ``dt = 0``
+additionally writes the same canonical rows to ``SummaryOutput``.
+
 When a selected optional variable has no valid mapping for a model, its shared
 column is written as ``NULL``. A missing required source field is reported as
 a configuration error. Raw model outputs remain model-specific; the
