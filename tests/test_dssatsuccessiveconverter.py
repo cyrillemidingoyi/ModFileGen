@@ -328,3 +328,15 @@ def test_one_management_keeps_all_automatic_cycles(tmp_path):
     assert result["time"].tolist() == [1991, 1992]
     assert result["lat"].tolist() == [-11.725, -11.725]
     assert result["lon"].tolist() == [36.175, 36.175]
+
+
+def test_legacy_sowing_year_offset_column_is_still_accepted(masterinput_copy):
+    with sqlite3.connect(masterinput_copy) as connection:
+        connection.execute(
+            "ALTER TABLE CropManagement RENAME COLUMN SeasonYearOffset TO SowingYearOffset"
+        )
+        row = simulation_row(connection)
+        managements = converter.successive_managements(row, connection)
+
+    assert [item["SeasonYearOffset"] for item in managements] == [0, 1, 2]
+    assert [converter.season_year_offset(item) for item in managements] == [0, 1, 2]

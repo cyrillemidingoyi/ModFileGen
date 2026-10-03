@@ -1,4 +1,4 @@
-idMangt,Idcultivar,sdens,OFertiPolicyCode,InoFertiPolicyCode,IrrigationPolicyCode,SoilTillPolicyCode,DHarvest,sowingdate,PlantOrder,SeasonOrder,SowingYearOffset
+idMangt,Idcultivar,sdens,OFertiPolicyCode,InoFertiPolicyCode,IrrigationPolicyCode,SoilTillPolicyCode,DHarvest,sowingdate,PlantOrder,SeasonOrder,SeasonYearOffset
 Mgt1M0_135,testcult,7.0,0,0,0,0,200,150,1,1,0
 Mgt1M0_135,testcult2,7.0,0,0,0,0,200,150,2,1,0
 ROT_MAIZE_PEANUT_3Y,testcult,7.0,0,0,0,0,200,150,1,1,0

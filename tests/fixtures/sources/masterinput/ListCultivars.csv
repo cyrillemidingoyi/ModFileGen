@@ -29,5 +29,5 @@ CodePSpecies,SpeciesName,IdCultivar,CodCultivar,CycleDuration,IdcultivarCelsius,
 850,maize,c850,gen_850,NULL,850,1,CU0850
 900,maize,c900,gen_900,0,900,1,CU0900
 950,maize,c950,gen_950,NULL,950,1,CU0950
-testcult,maize,testcult,testcult,NULL,NULL,1,NULL
-testcult2,peanut,testcult2,testcult2,NULL,NULL,1,NULL
+testcult,maize,testcult,testcult,NULL,20.1,1,NULL
+testcult2,peanut,testcult2,testcult2,NULL,2.1,1,NULL

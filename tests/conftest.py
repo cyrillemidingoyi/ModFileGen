@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures"))
 
-from build_fixtures import build_masterinput  # noqa: E402
+from build_fixtures import build_celsius_v32_template, build_masterinput  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -20,7 +20,25 @@ def masterinput_db(tmp_path_factory):
     return build_masterinput(tmp_path_factory.mktemp("fixtures") / "MasterInput.db")
 
 
+@pytest.fixture(scope="session")
+def celsius_v32_template_db(tmp_path_factory):
+    """CELSIUS V32 template database built once per session. Read-only."""
+    return build_celsius_v32_template(
+        tmp_path_factory.mktemp("fixtures") / "celsius_model_input.db"
+    )
+
+
 @pytest.fixture
 def masterinput_copy(masterinput_db, tmp_path):
     """Private, writable copy of the MasterInput fixture for one test."""
     return Path(shutil.copy2(masterinput_db, tmp_path / "MasterInput.db"))
+
+
+@pytest.fixture(autouse=True)
+def _apsim_tests_write_in_tmp_path(request, tmp_path, monkeypatch):
+    """APSIM tests write their .apsimx/.met outputs in the current directory.
+
+    Run them from a temporary directory so they never litter the repository.
+    """
+    if "apsim" in Path(str(request.node.fspath)).parts:
+        monkeypatch.chdir(tmp_path)
