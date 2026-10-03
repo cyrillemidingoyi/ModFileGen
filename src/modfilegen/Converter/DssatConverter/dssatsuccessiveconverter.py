@@ -26,6 +26,9 @@ import pandas as pd
 from joblib import Parallel, delayed, parallel_backend
 
 from modfilegen import GlobalVariables
+from modfilegen.coordinate_resolver import CoordinateResolver
+from modfilegen.output_configuration import OutputConfiguration
+from .summary_output import transform_summary_dataframe
 from . import dssatcultivarconverter, dssatsoilconverter, dssatxconverter
 from . import dssatweatherconverter_v2 as dssatweatherconverter
 from .dssatconverter import export as prepare_sqlite_indexes
@@ -834,7 +837,7 @@ def export_grouped_weather(group, context, sequence_dir):
         )
 
 
-def transform_sequence(summary_path, rotations):
+def transform_sequence(summary_path, rotations, coordinates=None):
     with open(summary_path, "r") as handle:
         lines = handle.readlines()
     if len(lines) < 5:
@@ -876,45 +879,15 @@ def transform_sequence(summary_path, rotations):
             if repeated_single_rotation
             else int(rotation.management["SeasonOrder"])
         )
-        planting_year = int(record.get("PDAT", 0)) // 1000
-        record["ys"] = planting_year or int(row["StartYear"])
-        if repeated_single_rotation and records:
-            record["y0"] = int(records[-1]["ys"])
-        else:
-            record["y0"] = int(
-                rotation.row["StartYear"]
-                if rotation.index == 1
-                else rotations[rotation.index - 2].row["StartYear"]
-            )
-        coords = re.findall(r"([-]?\d+[.]?\d+)[_]", str(row["idsim"]))
-        if len(coords) >= 3:
-            record["lat"] = float(coords[0])
-            record["lon"] = float(coords[1])
-            record["time"] = int(float(coords[2]))
-        else:
-            record["lat"] = None
-            record["lon"] = None
-            record["time"] = int(row["StartYear"])
+        sdat = int(record.get("SDAT", 0))
+        record["time"] = sdat // 1000 if sdat > 0 else None
+        record["lat"] = coordinates.latitude if coordinates else None
+        record["lon"] = coordinates.longitude if coordinates else None
         records.append(record)
 
     dataframe = pd.DataFrame(records)
     if dataframe.empty:
         return dataframe
-    dataframe = dataframe.rename(columns={
-        "PDAT": "Planting",
-        "EDAT": "Emergence",
-        "ADAT": "Ant",
-        "MDAT": "Mat",
-        "CWAM": "Biom_ma",
-        "HWAM": "Yield",
-        "H#AM": "GNumber",
-        "LAIX": "MaxLai",
-        "NLCM": "Nleac",
-        "NIAM": "SoilN",
-        "CNAM": "CroN_ma",
-        "ESCP": "CumE",
-        "EPCP": "Transp",
-    })
     first = ["Model", "Idsim", "Texte"]
     rest = [column for column in dataframe.columns if column not in first]
     return dataframe[first + rest]
@@ -982,61 +955,25 @@ def read_sequence_daily_file(file_path, source):
     )
 
 
-def summary_for_master_input(dataframe):
-    """Normalize successive summary rows like the standard DSSAT converter."""
-    summary_columns = [
-        "Model", "Idsim", "Texte", "SeasonOrder", "Planting", "Emergence",
-        "Ant", "Mat", "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac",
-        "SoilN", "CroN_ma", "CumE", "Transp",
-    ]
-    result = dataframe.copy()
-    for column in summary_columns:
-        if column not in result.columns:
-            result[column] = None
-    if "ys" not in result.columns or "y0" not in result.columns:
-        raise ValueError("Successive DSSAT summary is missing season date context")
-
-    result = result.replace(-99, float("nan"))
-    for column in ("Planting", "Emergence", "Ant", "Mat"):
-        result[column] = cumulative_sequence_dates(
-            result[column], result["ys"], result["y0"]
-        )
-    for column in ("Yield", "Biom_ma"):
-        result[column] = result[column] / 1000
-    value_columns = summary_columns[4:]
-    result[value_columns] = result[value_columns].mask(result[value_columns] < 0)
-    return result[summary_columns]
-
-
-def cumulative_sequence_dates(values, season_years, sequence_start_years):
-    """Convert DSSAT dates to cumulative DOY from each run's start year."""
-    converted = []
-    for value, season_year, start_year in zip(
-        values, season_years, sequence_start_years
-    ):
-        if pd.isna(value):
-            converted.append(float("nan"))
-            continue
-        numeric_value = int(float(value))
-        if numeric_value < 0:
-            converted.append(float("nan"))
-            continue
-        doy = numeric_value % 1000
-        if doy <= 0:
-            converted.append(float("nan"))
-            continue
-        elapsed = (date(int(season_year), 1, 1) - date(int(start_year), 1, 1)).days
-        converted.append(elapsed + doy)
-    return pd.Series(converted, index=values.index, dtype="float64")
-
-
-def save_successive_outputs(mi, summaries, daily_frames, save_summary, save_daily):
+def save_successive_outputs(mi, summary, daily_frames, save_summary, save_daily):
     with sqlite3.connect(mi) as connection:
         if save_summary:
-            summary = pd.concat(summaries, ignore_index=True)
-            summary = summary_for_master_input(summary)
-            connection.execute("DELETE FROM SummaryOutput WHERE Model = 'Dssat'")
-            summary.to_sql("SummaryOutput", connection, if_exists="append", index=False)
+            output_configuration = OutputConfiguration.from_files(
+                GlobalVariables.get("outputVariablesConfig"),
+                GlobalVariables.get("outputSelectionsConfig"),
+                GlobalVariables.get("profileVariablesConfig"),
+            )
+            added_columns = output_configuration.replace_model_summary_rows(
+                connection,
+                summary,
+                "Dssat",
+                GlobalVariables.get("outputSelection", "legacy"),
+            )
+            if added_columns:
+                print(
+                    "SummaryOutput columns added: " + ", ".join(added_columns),
+                    flush=True,
+                )
             print(f"{len(summary)} rows inserted into SummaryOutput.", flush=True)
 
         if save_daily:
@@ -1121,6 +1058,8 @@ def process_successive_group(
 
     context = create_context(mi, md, directory_path, pltfolder, dt, dailyoutput, dssat_version)
     try:
+        coordinate_resolver = CoordinateResolver(context["master_input_connection"])
+        coordinate_resolver.prefetch([group[0]["idPoint"]])
         managements = successive_managements(
             group[0], context["master_input_connection"]
         )
@@ -1147,7 +1086,8 @@ def process_successive_group(
         if not os.path.exists(summary):
             print(f"Summary file {summary} not found.", flush=True)
             return pd.DataFrame(), pd.DataFrame()
-        dataframe = transform_sequence(summary, rotations)
+        coordinates = coordinate_resolver.resolve(group[0]["idPoint"])
+        dataframe = transform_sequence(summary, rotations, coordinates)
         daily = (
             read_sequence_daily(sequence_dir, group[0]["idsim"])
             if dailyoutput == 1
@@ -1200,7 +1140,6 @@ def main():
     print(f"Parallel workers: {nthreads}", flush=True)
 
     result_path = os.path.join(directory_path, f"{uuid.uuid4()}_dssat_successive.csv")
-    write_header = True
     groups_written = 0
 
     try:
@@ -1225,22 +1164,35 @@ def main():
         for dataframe, daily in results:
             if dataframe.empty:
                 continue
-            dataframe.to_csv(result_path, mode="a", header=write_header, index=False)
             summary_frames.append(dataframe)
             if not daily.empty:
                 daily_frames.append(daily)
-            write_header = False
             groups_written += 1
 
         if groups_written == 0:
             print("No data to process.", flush=True)
             return None
 
-        save_summary = dt == 0 and bool(summary_frames)
+        raw_summary = pd.concat(summary_frames, ignore_index=True)
+        output_configuration = OutputConfiguration.from_files(
+            GlobalVariables.get("outputVariablesConfig"),
+            GlobalVariables.get("outputSelectionsConfig"),
+            GlobalVariables.get("profileVariablesConfig"),
+        )
+        output_selection = GlobalVariables.get("outputSelection", "legacy")
+        canonical_summary = transform_summary_dataframe(
+            raw_summary,
+            output_configuration,
+            output_selection,
+            mode="successive",
+        )
+        canonical_summary.to_csv(result_path, index=False)
+
+        save_summary = dt == 0 and not canonical_summary.empty
         save_daily = dailyoutput == 1 and bool(daily_frames)
         if save_summary or save_daily:
             save_successive_outputs(
-                mi, summary_frames, daily_frames, save_summary, save_daily
+                mi, canonical_summary, daily_frames, save_summary, save_daily
             )
         elif dailyoutput == 1:
             print("Warning: no DSSAT successive daily results were imported.", flush=True)

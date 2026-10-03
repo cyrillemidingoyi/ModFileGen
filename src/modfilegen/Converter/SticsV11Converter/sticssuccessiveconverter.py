@@ -20,6 +20,7 @@ import pandas as pd
 
 from modfilegen import GlobalVariables
 from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.soil_repository import SoilDataRepository
 from modfilegen.irrigation_repository import IrrigationRepository
 from . import sticsclimatconverter
@@ -358,6 +359,8 @@ def create_context(
     context["parameter_resolver"].prefetch_point(
         "sticsv11", {"station"}, set(point_ids or ())
     )
+    context["coordinate_resolver"] = CoordinateResolver(context["master"])
+    context["coordinate_resolver"].prefetch(set(point_ids or ()))
     context["soil_repository"] = SoilDataRepository(context["master"])
     context["soil_repository"].prefetch(soil_ids)
     context["irrigation_repository"] = IrrigationRepository(context["master"])
@@ -460,7 +463,9 @@ def run_stics(usmdir, output_dir, dailyoutput=0):
     )
 
 
-def collect_reports(simulation, season, season_key, directory_path, dt):
+def collect_reports(
+    simulation, season, season_key, directory_path, coordinates
+):
     if season["IsMixedCrop"]:
         reports = [("A", f"mod_rapportA_{season_key}.sti"), ("P", f"mod_rapportP_{season_key}.sti")]
     else:
@@ -475,7 +480,9 @@ def collect_reports(simulation, season, season_key, directory_path, dt):
         lines = report.read_text().splitlines()
         if lines and "ansemis" not in lines[0]:
             report.write_text(REPORT_HEADER + "\n" + "\n".join(lines) + "\n")
-        dataframe = create_df_summary(str(report), dt, str(simulation["idsim"]), plant_role)
+        dataframe = create_df_summary(
+            str(report), coordinates, str(simulation["idsim"]), plant_role
+        )
         dataframe.insert(3, "SeasonOrder", season["SeasonOrder"])
         dataframes.append(dataframe)
         report.unlink()
@@ -524,7 +531,13 @@ def process_simulation(
                     )
             normalize_successive_recup(usmdir)
             dataframes.extend(
-                collect_reports(simulation, season, season_key, directory_path, dt)
+                collect_reports(
+                    simulation,
+                    season,
+                    season_key,
+                    directory_path,
+                    context["coordinate_resolver"].resolve(simulation["idPoint"]),
+                )
             )
             if int(dailyoutput) == 1:
                 daily_dataframes.extend(

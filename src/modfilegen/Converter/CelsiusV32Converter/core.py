@@ -581,7 +581,7 @@ def _build_simulations(source, target, simulations, managements, mode):
             sequence = definition["output_order"]
             base_id = str(_value(simulation, "idsim"))
             sim_id = base_id if mode == "standard" else f"{base_id}__S{sequence:03d}"
-            tech_id = f"{sim_id}__TECH"
+            tech_id = f"{sim_id}"
             start = definition["start"]
             end = definition["end"]
             extended_sowing = [
