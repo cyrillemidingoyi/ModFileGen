@@ -48,3 +48,31 @@ def test_copy_is_isolated(masterinput_db, masterinput_copy):
         connection.execute("DELETE FROM SimUnitList")
     with sqlite3.connect(masterinput_db) as connection:
         assert connection.execute("SELECT COUNT(*) FROM SimUnitList").fetchone()[0] > 0
+
+
+def test_celsius_v32_template_keeps_references_and_default_rows(celsius_v32_template_db):
+    from build_fixtures import CELSIUS_V32_DEFAULT_ROW_TABLES, CELSIUS_V32_EMPTY_TABLES
+
+    with sqlite3.connect(celsius_v32_template_db) as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        names = {name.lower(): name for name in _tables(connection)}
+        for table in CELSIUS_V32_EMPTY_TABLES:
+            assert connection.execute(f'SELECT COUNT(*) FROM "{names[table]}"').fetchone()[0] == 0
+        for table in CELSIUS_V32_DEFAULT_ROW_TABLES:
+            assert connection.execute(f'SELECT COUNT(*) FROM "{names[table]}"').fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM Cultivars").fetchone()[0] > 0
+
+
+def test_masterinput_cultivars_resolve_in_celsius_v32_template(
+    masterinput_db, celsius_v32_template_db
+):
+    with sqlite3.connect(masterinput_db) as connection:
+        codes = {
+            row[0] for row in connection.execute(
+                "SELECT DISTINCT l.IdcultivarCelsius FROM CropManagement c "
+                "JOIN ListCultivars l ON l.IdCultivar = c.Idcultivar"
+            )
+        }
+    with sqlite3.connect(celsius_v32_template_db) as connection:
+        known = {str(row[0]) for row in connection.execute("SELECT IdCultivar FROM Cultivars")}
+    assert codes and codes <= known

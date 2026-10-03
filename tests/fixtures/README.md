@@ -12,7 +12,17 @@ fixtures/
     masterinput/
       schema.sql             CREATE TABLE and CREATE INDEX of the input tables
       <Table>.csv            rows of each input table
+    celsius_v32_template/    CELSIUS V32 model database used as template
+      schema.sql
+      <Table>.csv
 ```
+
+The CELSIUS V32 template keeps its reference tables whole (cultivars,
+species, stages, residues...). The converter empties and refills the
+simulation tables and reads the first row of some of them as default values:
+those tables keep only their first row, and the other simulation tables and
+the output tables are stored empty. Converting the MasterInput fixture into
+this reduced template gives the same database as with the full template.
 
 Only input tables are stored. Output tables (`SummaryOutput`,
 `*DailyOutput`, `SticsProfile`) are created by the converters, and their
@@ -27,16 +37,20 @@ columns depend on the output configuration.
 
 ## Using the fixture in tests
 
-`tests/conftest.py` provides two pytest fixtures:
+`tests/conftest.py` provides three pytest fixtures:
 
-- `masterinput_db`: the database built once per session. Treat it as
-  read-only.
+- `masterinput_db`: the MasterInput database built once per session. Treat
+  it as read-only.
 - `masterinput_copy`: a private copy for a test that writes to the database.
+- `celsius_v32_template_db`: the CELSIUS V32 template built once per session.
+  Treat it as read-only; copy it before converting into it.
 
 ## Rebuilding a database by hand
 
 ```bash
 python tests/fixtures/build_fixtures.py build --out /tmp/MasterInput.db
+python tests/fixtures/build_fixtures.py build --fixture celsius_v32_template \
+    --out /tmp/celsius_model_input.db
 ```
 
 ## Changing the fixture
@@ -57,6 +71,9 @@ This overwrites `schema.sql` and every CSV file.
 | Date | Source | Change |
 |---|---|---|
 | 2026-10-03 | `tests/stics_successive/MasterInput.db` | Initial export of the 26 input tables. The rebuilt database is identical to the source in values, storage types, schema and indexes. |
+| 2026-10-03 | `migrations/20260911_add_soil_ssat.sql` and `migrations/20261003_align_masterinput_with_lowinput_schema.sql` | Schema aligned with the reference input schema of `LowInput/blindphase_corrected/MasterInput.db`: `SeasonYearOffset` replaces `SowingYearOffset`, `Soil.Ssat`, `InitialConditions.option` (`simple`) and `NH4initf`, new `InitialConditionsLayers` and `dailyobs` tables (empty), `RAclimateD.rhum` as REAL plus `vapeurp` and `co2`. New values are NULL except `option`. |
+| 2026-10-04 | MasterInput `ListCultivars` | `testcult` and `testcult2` map to the CELSIUS V32 cultivars `20.1` (maize OPV_BEOU) and `2.1` (peanut ara28-206). |
+| 2026-10-04 | `tests/dssatsuccessive/celsius_model_input.db` | Initial export of the CELSIUS V32 template (24 tables, 81 cultivars), reduced as described above. |
 
 The initial content covers: one point and one soil, years 2000 to 2002,
 4 simulations, successive seasons, two-crop association, non-zero irrigation,

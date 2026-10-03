@@ -22,7 +22,7 @@ CREATE TABLE "CropManagement" (
   "SoilTillPolicyCode" TEXT,
   "DHarvest" INTEGER,
   "sowingdate" INTEGER
-, PlantOrder INTEGER DEFAULT 1, SeasonOrder INTEGER NOT NULL DEFAULT 1, SowingYearOffset INTEGER NOT NULL DEFAULT 0);
+, PlantOrder INTEGER DEFAULT 1, SeasonOrder INTEGER NOT NULL DEFAULT 1, SeasonYearOffset INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE CropManagementParameterOverrides (
     idMangt       TEXT NOT NULL,
@@ -44,6 +44,16 @@ CREATE TABLE [InitialConditions] (
 [idIni] VARCHAR(70),
 [WStockinit] DOUBLE(53),
 [Ninit] DOUBLE(53)
+, option TEXT DEFAULT 'simple', NH4initf REAL);
+
+CREATE TABLE InitialConditionsLayers (
+    idIni TEXT,
+    NumLayer INTEGER,
+    Lup REAL,
+    Ldown REAL,
+    WStockinit REAL,
+    Ninit REAL,
+    NH4initf REAL
 );
 
 CREATE TABLE [InorganicFOperations] (
@@ -131,23 +141,25 @@ CREATE TABLE PointParameterOverrides (
 );
 
 CREATE TABLE "RAclimateD" (
-"idPoint" TEXT,
-  "w_date" TEXT,
-  "year" INTEGER,
-  "DOY" INTEGER,
-  "Nmonth" INTEGER,
-  "NdayM" INTEGER,
-  "srad" REAL,
-  "tmax" REAL,
-  "tmin" REAL,
-  "tmoy" REAL,
-  "rain" REAL,
-  "wind" REAL,
-  "rhum" TEXT,
-  "Etppm" REAL,
-  "Tdewmin" REAL,
-  "Tdewmax" REAL,
-  "Surfpress" REAL
+    "idPoint" TEXT,
+    "w_date" TEXT,
+    "year" INTEGER,
+    "DOY" INTEGER,
+    "Nmonth" INTEGER,
+    "NdayM" INTEGER,
+    "srad" REAL,
+    "tmax" REAL,
+    "tmin" REAL,
+    "tmoy" REAL,
+    "rain" REAL,
+    "wind" REAL,
+    "rhum" REAL,
+    "Etppm" REAL,
+    "Tdewmin" REAL,
+    "Tdewmax" REAL,
+    "Surfpress" REAL,
+    vapeurp REAL,
+    co2 REAL
 );
 
 CREATE TABLE [RunoffTypes] (
@@ -203,7 +215,7 @@ CREATE TABLE "Soil" (
   "Slope" TEXT,
   "RunoffType" INTEGER,
   "albedo" REAL
-);
+, Ssat REAL);
 
 CREATE TABLE [SoilLayers] (
 [idsoil] VARCHAR(30),
@@ -255,6 +267,12 @@ CREATE TABLE [SoilTypes] (
 [IBSNATCode] VARCHAR(30)
 );
 
+CREATE TABLE dailyobs (
+    idsim TEXT,
+    maturitydate INTEGER,
+    maturitydate_calendar TEXT
+);
+
 CREATE INDEX idx_idCoord ON Coordinates (idPoint);
 
 CREATE UNIQUE INDEX uq_coordinates_idpoint
@@ -269,6 +287,12 @@ CREATE INDEX idx_management_parameter_override_lookup
 ON CropManagementParameterOverrides (
     Model, TargetTable, idMangt, SeasonOrder, PlantOrder
 );
+
+CREATE INDEX idx_initialconditions_idini
+ON InitialConditions (idIni);
+
+CREATE INDEX idx_initialconditionslayers_idini
+ON InitialConditionsLayers (idIni);
 
 CREATE INDEX idx_irrigation_operation_policy ON IrrigationFOperations (IrrigationPolicyCode);
 
@@ -289,9 +313,11 @@ CREATE INDEX idx_orga_res ON OrganicFOperations (TypeResidues);
 CREATE INDEX idx_point_parameter_override_lookup
 ON PointParameterOverrides (Model, TargetTable, idPoint);
 
-CREATE INDEX idx_idPoint ON RaClimateD (idPoint);
+CREATE INDEX idx_idPoint ON RAclimateD (idPoint);
 
-CREATE INDEX idx_idPoint_year ON RaClimateD (idPoint, year);
+CREATE INDEX idx_idPoint_year ON RAclimateD (idPoint, year);
+
+CREATE INDEX idx_raclimate_idpoint_date ON RAclimateD (idPoint, w_date);
 
 CREATE INDEX idx_idsim ON SimUnitList (idsim);
 
@@ -305,3 +331,5 @@ CREATE UNIQUE INDEX uq_soil_idsoil
 ON Soil(IdSoil);
 
 CREATE INDEX idx_idsoiltl ON SoilTypes (Lower(SoilTextureType));
+
+CREATE INDEX idx_dailyobs_idsim ON dailyobs (idsim);

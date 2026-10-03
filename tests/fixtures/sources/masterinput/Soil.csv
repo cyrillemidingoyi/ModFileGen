@@ -1,2 +1,2 @@
-location,OrganicNStock,extp,totp,SoilTotalDepth,bd,clay,OrganicC,pH,silt,sand,awcpf,cf,Wwp,Wfc,SoilRDepth,IdSoil,SoilTextureType,SoilOption,Slope,RunoffType,albedo
-0,0.126,9.798,-99,175.0,1.622,34.725,0.933,5.0,13.55,51.725,7.0,7.0,19.0,26.0,115.0,5.925_6.025,sandy clay loam,simple,NULL,1,0.3
+location,OrganicNStock,extp,totp,SoilTotalDepth,bd,clay,OrganicC,pH,silt,sand,awcpf,cf,Wwp,Wfc,SoilRDepth,IdSoil,SoilTextureType,SoilOption,Slope,RunoffType,albedo,Ssat
+0,0.126,9.798,-99,175.0,1.622,34.725,0.933,5.0,13.55,51.725,7.0,7.0,19.0,26.0,115.0,5.925_6.025,sandy clay loam,simple,NULL,1,0.3,NULL

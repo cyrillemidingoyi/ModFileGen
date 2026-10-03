@@ -1,13 +1,9 @@
 import shutil
 import sqlite3
-from pathlib import Path
 
 import pytest
 
 from modfilegen.Converter.CelsiusV32Converter.core import convert_database
-
-
-SOURCE = Path(__file__).parent / "stics_successive" / "MasterInput.db"
 
 
 TARGET_SCHEMA = """
@@ -80,11 +76,11 @@ def rows(path, query, params=()):
         return [dict(row) for row in connection.execute(query, params)]
 
 
-def test_successive_expands_seasons_and_preserves_associated_crops(tmp_path):
+def test_successive_expands_seasons_and_preserves_associated_crops(tmp_path, masterinput_db):
     target = tmp_path / "celsius-v32.db"
     make_target(target)
 
-    convert_database(SOURCE, target, mode="successive")
+    convert_database(masterinput_db, target, mode="successive")
 
     simulations = rows(
         target, "SELECT * FROM SimUnitList ORDER BY ChampTri"
@@ -108,8 +104,8 @@ def test_successive_expands_seasons_and_preserves_associated_crops(tmp_path):
         (first_standard["idTech_Com"],),
     )
     assert crops == [
-        {"NumCrop": 1, "IdCultivar": "testcult"},
-        {"NumCrop": 2, "IdCultivar": "testcult2"},
+        {"NumCrop": 1, "IdCultivar": "20.1"},
+        {"NumCrop": 2, "IdCultivar": "2.1"},
     ]
     tech = rows(
         target,
@@ -119,11 +115,11 @@ def test_successive_expands_seasons_and_preserves_associated_crops(tmp_path):
     assert tech[0]["NbCult"] == 2
 
 
-def test_successive_converts_weather_soils_options_and_operations(tmp_path):
+def test_successive_converts_weather_soils_options_and_operations(tmp_path, masterinput_db):
     target = tmp_path / "celsius-v32.db"
     make_target(target)
 
-    convert_database(SOURCE, target, mode="successive")
+    convert_database(masterinput_db, target, mode="successive")
 
     assert rows(target, "SELECT COUNT(*) AS n FROM Dweather")[0]["n"] == 1096
     assert rows(target, "SELECT COUNT(*) AS n FROM Soil_layers")[0]["n"] == 2
@@ -132,17 +128,16 @@ def test_successive_converts_weather_soils_options_and_operations(tmp_path):
     assert rows(target, "SELECT COUNT(*) AS n FROM OptionsModel")[0]["n"] == 1
 
 
-def test_standard_rejects_a_multi_season_management(tmp_path):
+def test_standard_rejects_a_multi_season_management(tmp_path, masterinput_db):
     target = tmp_path / "celsius-v32.db"
     make_target(target)
 
     with pytest.raises(ValueError, match="use celsius_mode='successive'"):
-        convert_database(SOURCE, target, mode="standard")
+        convert_database(masterinput_db, target, mode="standard")
 
 
-def test_standard_keeps_one_simulation_and_two_associated_crops(tmp_path):
-    master = tmp_path / "MasterInput.db"
-    shutil.copy2(SOURCE, master)
+def test_standard_keeps_one_simulation_and_two_associated_crops(masterinput_copy, tmp_path):
+    master = masterinput_copy
     with sqlite3.connect(master) as connection:
         connection.execute(
             "DELETE FROM SimUnitList WHERE idMangt='ROT_MAIZE_PEANUT_3Y'"
@@ -161,21 +156,18 @@ def test_standard_keeps_one_simulation_and_two_associated_crops(tmp_path):
     ]
 
 
-CELSIUS_FIXTURES = Path(__file__).parent / "celsius"
-
-
 @pytest.mark.parametrize(
     ("dailyoutput", "expected"),
     [(None, 0), (0, 0), (1, 1), ("1", 1)],
 )
 def test_run_enables_daily_output_only_when_dailyoutput_is_one(
-    tmp_path, monkeypatch, dailyoutput, expected
+    tmp_path, monkeypatch, dailyoutput, expected, masterinput_copy,
+    celsius_v32_template_db,
 ):
     from modfilegen import GlobalVariables
     from modfilegen.Converter.CelsiusV32Converter.runner import run
 
-    master = tmp_path / "MasterInput.db"
-    shutil.copy2(CELSIUS_FIXTURES / "MasterInput.db", master)
+    master = masterinput_copy
     output = tmp_path / "celsius_v32.db"
     with sqlite3.connect(master) as connection:
         idsim = connection.execute(
@@ -184,7 +176,7 @@ def test_run_enables_daily_output_only_when_dailyoutput_is_one(
 
     settings = {
         "dbMasterInput": str(master),
-        "dbCelsiusV32Template": str(CELSIUS_FIXTURES / "celsius_model_input.db"),
+        "dbCelsiusV32Template": str(celsius_v32_template_db),
         "celsiusV32Output": str(output),
         "celsiusIdsim": idsim,
         "runCelsiusV32": 0,
@@ -237,17 +229,24 @@ def make_fake_engine(tmp_path, body=FAKE_ENGINE):
     return str(engine)
 
 
-def make_standard_database(tmp_path, count=7):
+STANDARD_SIMULATIONS = 3  # single-season simulations in the MasterInput fixture
+
+
+def make_standard_database(tmp_path, master, template, count=STANDARD_SIMULATIONS):
     database = tmp_path / "standard.db"
-    shutil.copy2(CELSIUS_FIXTURES / "celsius_model_input.db", database)
-    with sqlite3.connect(CELSIUS_FIXTURES / "MasterInput.db") as connection:
+    shutil.copy2(template, database)
+    with sqlite3.connect(master) as connection:
         ids = [
             row[0]
             for row in connection.execute(
-                "SELECT idsim FROM SimUnitList ORDER BY idsim LIMIT ?", (count,)
+                "SELECT idsim FROM SimUnitList WHERE idMangt NOT IN "
+                "(SELECT idMangt FROM CropManagement WHERE SeasonOrder > 1) "
+                "ORDER BY idsim LIMIT ?",
+                (count,),
             )
         ]
-    convert_database(CELSIUS_FIXTURES / "MasterInput.db", database, simulation_ids=ids)
+    assert len(ids) == count
+    convert_database(master, database, simulation_ids=ids)
     return database
 
 
@@ -271,8 +270,12 @@ def test_partition_keeps_chains_whole_and_balances_parts():
     assert _partition_chains(chains, 1) == [list(range(1, 11))]
 
 
-def test_conversion_indexes_per_simulation_lookups(tmp_path):
-    database = make_standard_database(tmp_path, count=1)
+def test_conversion_indexes_per_simulation_lookups(
+    tmp_path, masterinput_db, celsius_v32_template_db
+):
+    database = make_standard_database(
+        tmp_path, masterinput_db, celsius_v32_template_db, count=1
+    )
     indexes = {
         row["tbl_name"]
         for row in rows(
@@ -284,11 +287,13 @@ def test_conversion_indexes_per_simulation_lookups(tmp_path):
     assert {"Dweather", "Tech_perCrop", "Soil_layers", "StadePheno"} <= indexes
 
 
-def test_parallel_run_matches_a_single_process(tmp_path):
+def test_parallel_run_matches_a_single_process(
+    tmp_path, masterinput_db, celsius_v32_template_db
+):
     from modfilegen.Converter.CelsiusV32Converter.runner import run_model
 
     engine = make_fake_engine(tmp_path)
-    single = make_standard_database(tmp_path)
+    single = make_standard_database(tmp_path, masterinput_db, celsius_v32_template_db)
     parallel = tmp_path / "parallel.db"
     shutil.copy2(single, parallel)
 
@@ -296,16 +301,16 @@ def test_parallel_run_matches_a_single_process(tmp_path):
     run_model(parallel, engine, workers=3)
 
     assert outputs(parallel) == outputs(single)
-    assert len(outputs(parallel)[0]) == 7
+    assert len(outputs(parallel)[0]) == STANDARD_SIMULATIONS
     assert not list(tmp_path.glob("parallel_workers_*"))
 
 
-def test_parallel_run_never_splits_successive_chains(tmp_path):
+def test_parallel_run_never_splits_successive_chains(tmp_path, masterinput_db):
     from modfilegen.Converter.CelsiusV32Converter.runner import run_model
 
     target = tmp_path / "successive.db"
     make_target(target)
-    convert_database(SOURCE, target, mode="successive")
+    convert_database(masterinput_db, target, mode="successive")
     engine = make_fake_engine(tmp_path)
 
     run_model(target, engine, workers=4)
@@ -314,13 +319,15 @@ def test_parallel_run_never_splits_successive_chains(tmp_path):
     assert [row["Idsim"] for row in outputs(target)[0]] == expected
 
 
-def test_parallel_run_failure_keeps_worker_files(tmp_path):
+def test_parallel_run_failure_keeps_worker_files(
+    tmp_path, masterinput_db, celsius_v32_template_db
+):
     from modfilegen.Converter.CelsiusV32Converter.runner import run_model
 
     engine = make_fake_engine(
         tmp_path, "#!{python}\nimport sys\nprint('engine exploded')\nsys.exit(2)\n"
     )
-    database = make_standard_database(tmp_path, count=4)
+    database = make_standard_database(tmp_path, masterinput_db, celsius_v32_template_db)
 
     with pytest.raises(RuntimeError, match="engine exploded"):
         run_model(database, engine, workers=2)
