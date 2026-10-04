@@ -1,4 +1,5 @@
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.parameter_resolver import ParameterResolver
@@ -1299,7 +1300,11 @@ def _main_standard(simulations=None):
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
 
-    data = fetch_data_from_sqlite(mi) if simulations is None else simulations
+    if simulations is None:
+        simulations = keep_simulations_with_weather(
+            fetch_data_from_sqlite(mi), mi, "Stics", directoryPath
+        )
+    data = simulations
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     n_simulations = len(data)
@@ -1699,6 +1704,9 @@ def main():
         ]
         if not simulations:
             raise ValueError(f"STICS simulation {target_idsim!r} was not found")
+    simulations = keep_simulations_with_weather(
+        simulations, mi, "Stics", GlobalVariables.get("directorypath", os.getcwd())
+    )
 
     standard, successive = simulations, []
 

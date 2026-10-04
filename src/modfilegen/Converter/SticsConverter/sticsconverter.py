@@ -1,4 +1,5 @@
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
@@ -1313,7 +1314,9 @@ def main():
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
 
-    data = fetch_data_from_sqlite(mi)
+    data = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Stics", directoryPath
+    )
     
     if resume_stics == 1:
         result_path = glob(os.path.join(directoryPath, "*_stics.csv"))

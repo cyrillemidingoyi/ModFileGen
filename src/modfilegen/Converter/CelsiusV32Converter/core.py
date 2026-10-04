@@ -13,6 +13,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import sqlite3
 
+from modfilegen.weather_coverage import keep_simulations_with_weather
+
 
 REQUIRED_TARGET_TABLES = {
     "Dweather", "ListPAnnexes", "ParamIni", "Tech_Commun",
@@ -670,7 +672,11 @@ def create_lookup_indexes(connection):
 
 
 def convert_database(
-    master_input, celsius_database, mode="standard", simulation_ids=None
+    master_input,
+    celsius_database,
+    mode="standard",
+    simulation_ids=None,
+    report_directory=None,
 ):
     """Populate an existing CELSIUS V32 database from MasterInput.
 
@@ -711,6 +717,9 @@ def convert_database(
                 )
         else:
             simulations = _rows(source, "SELECT * FROM SimUnitList ORDER BY idsim")
+        simulations = keep_simulations_with_weather(
+            simulations, source, "CelsiusV32", report_directory
+        )
         if not simulations:
             raise ValueError("No simulations selected for CELSIUS V32")
         managements = _managements(source)

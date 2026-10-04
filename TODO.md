@@ -26,6 +26,9 @@ and linked to an issue or pull request when one exists.
 
 ## Tests and maintenance
 
+- [ ] DSSAT standard: a `STOP 99` in one simulation aborts its whole chunk and
+  the main loop discards the chunk, including simulations that already
+  succeeded; skip only the failing simulation and report it.
 - [ ] Make the text fixtures runnable by every model and add opt-in
   `integration` tests that run the executables: extend the fixture weather to
   2004 for the DSSAT successive rotation, version the STICS cultivar files
@@ -66,6 +69,16 @@ and linked to an issue or pull request when one exists.
 - [ ] Add regression tests for default, computed, and explicit `q0` values.
 
 ## Completed
+
+- [x] Drop DSSAT daily output rows outside StartYear/StartDay to
+  EndYear/EndDay (standard and successive), so days DSSAT simulates after the
+  simulation end, possibly on rollover weather, never reach `DssatDailyOutput`.
+
+- [x] Skip, without deleting them from `SimUnitList`, the simulations whose
+  StartYear/StartDay to EndYear/EndDay period is not covered by consecutive
+  `RAclimateD` days of their `idPoint` (`modfilegen.weather_coverage`), in every
+  converter; skipped simulations are printed and listed in
+  `skipped_simulations_<model>.csv` in the output directory.
 
 - [x] Add a `modelsdictionary` text fixture (`Variables` table only, exported
   from `LowInput/blindphase_corrected/ModelsDictionaryArise.db`) and the

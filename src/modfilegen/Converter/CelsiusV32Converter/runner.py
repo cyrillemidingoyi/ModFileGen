@@ -358,7 +358,13 @@ def run(mode):
     simulation_ids = GlobalVariables.get("celsiusIdsim")
     if isinstance(simulation_ids, str):
         simulation_ids = [simulation_ids]
-    convert_database(master, output, mode=mode, simulation_ids=simulation_ids)
+    convert_database(
+        master,
+        output,
+        mode=mode,
+        simulation_ids=simulation_ids,
+        report_directory=GlobalVariables.get("directorypath") or output.parent,
+    )
     _set_daily_output(output, int(GlobalVariables.get("dailyoutput", 0)) == 1)
     if int(GlobalVariables.get("runCelsiusV32", 1)):
         executable = str(GlobalVariables.get("celsiusV32Executable", "celsiusV32"))

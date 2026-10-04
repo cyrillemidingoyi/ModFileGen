@@ -26,6 +26,10 @@ import pandas as pd
 from joblib import Parallel, delayed, parallel_backend
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import (
+    keep_rows_in_simulation_period,
+    keep_simulations_with_weather,
+)
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import transform_summary_dataframe
@@ -913,7 +917,7 @@ def transform_sequence(summary_path, rotations, coordinates=None):
     return dataframe[first + rest]
 
 
-def read_sequence_daily(sequence_dir, idsim):
+def read_sequence_daily(sequence_dir, idsim, simulation=None):
     output_files = {
         source: os.path.join(sequence_dir, filename)
         for source, filename in DSSAT_DAILY_FILES.items()
@@ -931,6 +935,8 @@ def read_sequence_daily(sequence_dir, idsim):
             else daily.merge(module_data, on=["YEAR", "DOY"], how="outer")
         )
     daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True)
+    if simulation is not None:
+        daily = keep_rows_in_simulation_period(daily, simulation)
     daily.insert(0, "Idsim", str(idsim))
     daily.insert(0, "Model", "Dssat")
     return daily
@@ -1109,7 +1115,7 @@ def process_successive_group(
         coordinates = coordinate_resolver.resolve(group[0]["idPoint"])
         dataframe = transform_sequence(summary, rotations, coordinates)
         daily = (
-            read_sequence_daily(sequence_dir, group[0]["idsim"])
+            read_sequence_daily(sequence_dir, group[0]["idsim"], group[0])
             if dailyoutput == 1
             else pd.DataFrame()
         )
@@ -1152,7 +1158,9 @@ def main():
 
     start = time()
     prepare_sqlite_indexes(mi, md)
-    rows = fetch_data_from_sqlite(mi)
+    rows = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Dssat", directory_path
+    )
     groups = build_successive_groups(rows)
 
     print(f"Total simulations to process: {len(rows)}", flush=True)

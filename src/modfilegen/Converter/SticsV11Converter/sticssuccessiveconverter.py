@@ -19,6 +19,7 @@ import uuid
 import pandas as pd
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.parameter_resolver import ParameterResolver
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.soil_repository import SoilDataRepository
@@ -628,7 +629,9 @@ def main(simulations=None):
     started = time()
     prepare_sqlite_indexes(mi, md)
     if simulations is None:
-        simulations = fetch_data_from_sqlite(mi)
+        simulations = keep_simulations_with_weather(
+            fetch_data_from_sqlite(mi), mi, "Stics", directory_path
+        )
     if not simulations:
         print("No simulation to process.", flush=True)
         return None

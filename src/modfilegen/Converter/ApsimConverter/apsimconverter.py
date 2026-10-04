@@ -12,6 +12,7 @@ Date: 2024-2026
 """
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.converter import Converter
 from . import apsimweatherconverter, apsimsoilconverter, apsimmanagementconverter, apsiminitconverter
 import sys
@@ -800,7 +801,9 @@ def main():
     export(mi, md)
     
     # Fetch simulation data
-    data = fetch_data_from_sqlite(mi)
+    data = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Apsim", directoryPath
+    )
     
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
