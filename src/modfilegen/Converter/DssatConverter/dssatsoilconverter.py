@@ -5,8 +5,10 @@ import pandas as pd
 import traceback
 
 
-def resolve_ssat(soil_ssat, soil_wfc):
-    """Return DSSAT SSAT, preferring the soil value over the Wfc fallback."""
+def resolve_ssat(soil_ssat, soil_wfc, layer_ssat=None):
+    """Return DSSAT SSAT with layer, soil, then Wfc fallback priority."""
+    if pd.notna(layer_ssat):
+        return float(layer_ssat) / 100
     if pd.notna(soil_ssat):
         return float(soil_ssat) / 100
     return float(soil_wfc) * 1.01 / 100
@@ -86,7 +88,12 @@ class DssatSoilConverter(Converter):
                 for item in master_input_connection.execute("PRAGMA table_info(SoilLayers)")
             }
             ssat_expression = "Soil.Ssat" if "ssat" in soil_columns else "NULL"
-            Ssat_expression = "SoilLayers.Ssat" if "ssat" in soil_layer_columns else "NULL"
+            layer_ssat_expression = (
+                "SoilLayers.Ssat" if "ssat" in soil_layer_columns else "NULL"
+            )
+            layer_ssks_expression = (
+                "SoilLayers.Ssks" if "ssks" in soil_layer_columns else "NULL"
+            )
             fetchAllQuery1 = """Select Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd AS 'Soil.bd', Soil.OrganicC AS 'Soil.OrganicC', 
                                         Soil.Cf AS 'Soil.Cf', Soil.pH AS 'Soil.pH', Soil.extp AS 'Soil.extp', Soil.totp AS 'Soil.totp', 
                                         Soil.sand AS 'Soil.sand', Soil.clay AS 'Soil.clay', Soil.silt AS 'Soil.silt',
@@ -96,11 +103,14 @@ class DssatSoilConverter(Converter):
                                         SoilLayers.bd AS 'SoilLayers.bd', SoilLayers.OrganicC AS 'SoilLayers.OrganicC', 
                                         SoilLayers.Clay AS 'SoilLayers.Clay', SoilLayers.Silt AS 'SoilLayers.Silt', 
                                         SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH',
-                                        {ssat_expression} AS 'Soil.Ssat', {Ssat_expression} AS 'SoilLayers.Ssat',
+                                        {ssat_expression} AS 'Soil.Ssat',
+                                        {layer_ssat_expression} AS 'SoilLayers.Ssat',
+                                        {layer_ssks_expression} AS 'SoilLayers.Ssks',
                                         SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN' FROM SOIL LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = '%s' ;"""%(idSoil.lower())
             fetchAllQuery1 = fetchAllQuery1.format(
                 ssat_expression=ssat_expression,
-                Ssat_expression=Ssat_expression,
+                layer_ssat_expression=layer_ssat_expression,
+                layer_ssks_expression=layer_ssks_expression,
             )
             DA1 = pd.read_sql_query(fetchAllQuery1, master_input_connection)
             rows1 = DA1.to_dict(orient='records')
@@ -161,14 +171,17 @@ class DssatSoilConverter(Converter):
                     fileContent += v_fmt["SLLL"].format(row1["SoilLayers.Wwp"] / 100)
                     fileContent += v_fmt["SDUL"].format(row1["SoilLayers.Wfc"] / 100)
                     fileContent += v_fmt["SSAT"].format(
-                        resolve_ssat(row1["Soil.Ssat"], row1["Soil.Wfc"])
+                        resolve_ssat(
+                            row1["Soil.Ssat"], row1["SoilLayers.Wfc"],
+                            row1["SoilLayers.Ssat"],
+                        )
                     )
                     rw = DT[DT["Champ"] == "srgf"]
                     Dv = rw["dv"].values[0]
                     fileContent += v_fmt["SRGF"].format(float(Dv))
-                    measured_Ssat = row1["SoilLayers.Ssat"]
-                    if pd.notna(measured_Ssat):
-                        fileContent += v_fmt["SSKS"].format(measured_Ssat)
+                    measured_ssks = row1["SoilLayers.Ssks"]
+                    if pd.notna(measured_ssks):
+                        fileContent += v_fmt["SSKS"].format(measured_ssks)
                     else:
                         rw = DT[DT["Champ"] == "ssks"]
                         Dv = rw["dv"].values[0]
