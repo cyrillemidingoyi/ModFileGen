@@ -26,6 +26,10 @@ import pandas as pd
 from joblib import Parallel, delayed, parallel_backend
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import (
+    keep_rows_in_simulation_period,
+    keep_simulations_with_weather,
+)
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import transform_summary_dataframe
@@ -294,10 +298,22 @@ def shift_section_dates(sections, section, days, reference_year):
     sections[section] = shifted
 
 
+def season_year_offset(management):
+    """Return the sowing year offset of one management season.
+
+    ``SeasonYearOffset`` is the current MasterInput column; ``SowingYearOffset``
+    is accepted for databases created before the rename.
+    """
+    for name in ("SeasonYearOffset", "SowingYearOffset"):
+        if name in management:
+            return int(management[name])
+    raise KeyError("SeasonYearOffset")
+
+
 def apply_successive_management_dates(sections, simunit_row, season_row, management):
     """Replace legacy standard-mode dates with successive calendar dates."""
     planting = julian_date(
-        int(simunit_row["StartYear"]) + int(management["SowingYearOffset"]),
+        int(simunit_row["StartYear"]) + season_year_offset(management),
         int(management["sowingdate"]),
     )
     legacy_planting = julian_date(
@@ -385,8 +401,14 @@ def successive_managements(row, master_input_connection):
         item[1]
         for item in master_input_connection.execute("PRAGMA table_info(CropManagement)")
     }
-    required = {"PlantOrder", "SeasonOrder", "SowingYearOffset"}
+    offset_column = next(
+        (name for name in ("SeasonYearOffset", "SowingYearOffset") if name in columns),
+        None,
+    )
+    required = {"PlantOrder", "SeasonOrder"}
     missing = sorted(required.difference(columns))
+    if offset_column is None:
+        missing.append("SeasonYearOffset (or legacy SowingYearOffset)")
     if missing:
         raise ValueError(
             "CropManagement is missing DSSAT successive columns: "
@@ -405,6 +427,8 @@ def successive_managements(row, master_input_connection):
     )
     if dataframe.empty:
         raise ValueError(f"No CropManagement rows found for {row['idMangt']!r}")
+    if offset_column != "SeasonYearOffset":
+        dataframe["SeasonYearOffset"] = dataframe[offset_column]
 
     duplicated_seasons = dataframe.groupby("SeasonOrder").size()
     duplicated_seasons = duplicated_seasons[duplicated_seasons > 1]
@@ -422,12 +446,12 @@ def season_simunit_row(
 ):
     """Create the dated row used by the legacy one-management block writers."""
     row = dict(simunit_row)
-    sowing_year = int(simunit_row["StartYear"]) + int(management["SowingYearOffset"])
+    sowing_year = int(simunit_row["StartYear"]) + season_year_offset(management)
     sowing_day = int(management["sowingdate"])
     if not 1 <= sowing_day <= 366:
         raise ValueError(
             f"Invalid sowingdate {sowing_day} for season {management['SeasonOrder']}; "
-            "use SowingYearOffset for years after the first"
+            "use SeasonYearOffset for years after the first"
         )
     planting = julian_date(sowing_year, sowing_day)
     harvest = planting + timedelta(days=max(1, int(management["DHarvest"])))
@@ -893,7 +917,7 @@ def transform_sequence(summary_path, rotations, coordinates=None):
     return dataframe[first + rest]
 
 
-def read_sequence_daily(sequence_dir, idsim):
+def read_sequence_daily(sequence_dir, idsim, simulation=None):
     output_files = {
         source: os.path.join(sequence_dir, filename)
         for source, filename in DSSAT_DAILY_FILES.items()
@@ -911,6 +935,8 @@ def read_sequence_daily(sequence_dir, idsim):
             else daily.merge(module_data, on=["YEAR", "DOY"], how="outer")
         )
     daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True)
+    if simulation is not None:
+        daily = keep_rows_in_simulation_period(daily, simulation)
     daily.insert(0, "Idsim", str(idsim))
     daily.insert(0, "Model", "Dssat")
     return daily
@@ -1089,7 +1115,7 @@ def process_successive_group(
         coordinates = coordinate_resolver.resolve(group[0]["idPoint"])
         dataframe = transform_sequence(summary, rotations, coordinates)
         daily = (
-            read_sequence_daily(sequence_dir, group[0]["idsim"])
+            read_sequence_daily(sequence_dir, group[0]["idsim"], group[0])
             if dailyoutput == 1
             else pd.DataFrame()
         )
@@ -1132,7 +1158,9 @@ def main():
 
     start = time()
     prepare_sqlite_indexes(mi, md)
-    rows = fetch_data_from_sqlite(mi)
+    rows = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Dssat", directory_path
+    )
     groups = build_successive_groups(rows)
 
     print(f"Total simulations to process: {len(rows)}", flush=True)

@@ -19,6 +19,7 @@ from pathlib import Path
 from time import time
 import subprocess
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
@@ -191,7 +192,9 @@ def main():
     while os.path.exists(result_path):
         result_path = os.path.join(directoryPath, f"{uuid.uuid4()}_celsius.csv")
     
-    data = fetch_data_from_sqlite(mi)
+    data = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Celsius", directoryPath
+    )
     with sqlite3.connect(mi) as coordinate_connection:
         coordinate_resolver = CoordinateResolver(coordinate_connection)
         coordinate_resolver.prefetch(row["idPoint"] for row in data)

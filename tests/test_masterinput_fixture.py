@@ -76,3 +76,12 @@ def test_masterinput_cultivars_resolve_in_celsius_v32_template(
     with sqlite3.connect(celsius_v32_template_db) as connection:
         known = {str(row[0]) for row in connection.execute("SELECT IdCultivar FROM Cultivars")}
     assert codes and codes <= known
+
+
+def test_modelsdictionary_holds_only_the_variables_table(modelsdictionary_db):
+    with sqlite3.connect(modelsdictionary_db) as connection:
+        assert _tables(connection) == {"Variables"}
+        models = {
+            row[0] for row in connection.execute("SELECT DISTINCT model FROM Variables")
+        }
+    assert {"master", "stics", "sticsv11", "dssat", "celsius"} <= models

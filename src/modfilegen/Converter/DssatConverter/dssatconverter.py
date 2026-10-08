@@ -13,6 +13,10 @@ CONFIGURATION (in GlobalVariables):
 """
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import (
+    keep_rows_in_simulation_period,
+    keep_simulations_with_weather,
+)
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
@@ -123,7 +127,7 @@ def read_dssat_daily_file(file_path, source):
     return data
 
 
-def create_df_daily(output_files, idsim):
+def create_df_daily(output_files, idsim, simulation=None):
     """Merge DSSAT daily modules on calendar year and day of year."""
     daily = None
     for source, file_path in output_files.items():
@@ -136,6 +140,8 @@ def create_df_daily(output_files, idsim):
     if daily is None:
         return pd.DataFrame()
     daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True).copy()
+    if simulation is not None:
+        daily = keep_rows_in_simulation_period(daily, simulation)
     daily = pd.concat(
         [
             pd.DataFrame({
@@ -351,7 +357,7 @@ def process_chunk(*args):
                     if os.path.exists(path)
                 }
                 if output_files:
-                    daily_df = create_df_daily(output_files, row["idsim"])
+                    daily_df = create_df_daily(output_files, row["idsim"], row)
                     append_dataframe_csv(daily_df, tmp_daily_csv)
                     del daily_df
                     for output_file in output_files.values():
@@ -499,7 +505,9 @@ def main():
         result_name = str(uuid.uuid4()) + "_dssat"
         result_path = os.path.join(directoryPath, f"{result_name}.csv")
 
-    data = fetch_data_from_sqlite(mi)
+    data = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Dssat", directoryPath
+    )
     n_simulations = len(data)
     print(f"📊 Total simulations to process: {n_simulations}", flush=True)
     
