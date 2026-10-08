@@ -345,6 +345,54 @@ class OutputConfiguration:
             added.append(name)
         return tuple(added)
 
+    def replace_model_summary_rows(
+        self,
+        connection: sqlite3.Connection,
+        dataframe: Any,
+        model: str,
+        selection: str = "legacy",
+    ) -> Tuple[str, ...]:
+        """Remplace les lignes d'un modèle dans SummaryOutput.
+
+        La table est créée si elle manque, et complétée par les colonnes de la
+        sélection ou du ``dataframe`` qui n'existent pas encore. Seules les
+        lignes dont ``Model`` correspond à ``model``, sans tenir compte de la
+        casse, sont supprimées avant l'ajout : les lignes des autres modèles
+        sont conservées. Retourne les colonnes ajoutées.
+        """
+        from pandas.api import types as pandas_types
+
+        added = list(self.ensure_summary_output_schema(connection, selection))
+        table_sql = self.summary_table.replace('"', '""')
+        existing = {
+            str(row[1]).lower()
+            for row in connection.execute(f'PRAGMA table_info("{table_sql}")')
+        }
+        for name in dataframe.columns:
+            if str(name).lower() in existing:
+                continue
+            dtype = dataframe[name].dtype
+            if pandas_types.is_integer_dtype(dtype) or pandas_types.is_bool_dtype(dtype):
+                sql_type = "INTEGER"
+            elif pandas_types.is_numeric_dtype(dtype):
+                sql_type = "REAL"
+            else:
+                sql_type = "TEXT"
+            escaped = str(name).replace('"', '""')
+            connection.execute(
+                f'ALTER TABLE "{table_sql}" ADD COLUMN "{escaped}" {sql_type}'
+            )
+            existing.add(str(name).lower())
+            added.append(str(name))
+        connection.execute(
+            f'DELETE FROM "{table_sql}" WHERE lower(Model) = lower(?)', (model,)
+        )
+        if len(dataframe):
+            dataframe.to_sql(
+                self.summary_table, connection, if_exists="append", index=False
+            )
+        return tuple(added)
+
     def _validate(self) -> None:
         for label, document in (
             ("variables", self.variables_document),

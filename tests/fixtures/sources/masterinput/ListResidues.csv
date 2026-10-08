@@ -1,0 +1,8 @@
+TypeResidues,IdResidueCelsius,NomResidueCelsius,idresidueStics,NomResidueStics,idresidueDssat,NomResidueDssat
+0,1,pas de mulch,NULL,NULL,NULL,NULL
+1,2,maïs frais,1,Main crop on surface,RE201,generic cereal residue
+2,2,maïs frais,2,Intermediate crop on surface,RE001,generic crop residue
+3,1,pas de mulch,3,Manure on surface,RE003,Barnyard manure
+4,1,pas de mulch,11,Main crop ploughed in,RE201,generic cereal residue
+5,1,pas de mulch,12,Intermediate crop ploughed in,RE001,generic crop residue
+6,1,pas de mulch,13,Manure ploughed in,RE003,Barnyard manure

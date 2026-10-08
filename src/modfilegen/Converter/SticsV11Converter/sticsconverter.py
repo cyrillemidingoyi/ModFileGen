@@ -1,13 +1,15 @@
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.parameter_resolver import ParameterResolver
 from modfilegen.soil_repository import SoilDataRepository
 from modfilegen.irrigation_repository import IrrigationRepository
+from modfilegen.output_configuration import OutputConfiguration
 from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailconverter, sticsparamsolconverter
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
 import subprocess
-import re
 import os
 import sqlite3
 from sqlite3 import Connection
@@ -28,13 +30,6 @@ SUMMARY_COLS = ["Model","Idsim","Texte","Planting","Emergence","Ant","Mat","Biom
 DAILY_OUTPUT_TABLE = "SticsDailyOutput"
 PROFILE_OUTPUT_TABLE = "SticsProfile"
 
-def get_coord(d):
-    res = re.findall(r"([-]?\d+[.]?\d+)[_]", d)
-    lat = float(res[0])
-    lon = float(res[1])
-    year = int(float(res[2]))
-    return {'lon': lon, 'lat': lat, 'year': year}
-
 def remove_comma(f):
     try:
         with open(f, "r") as fil:
@@ -47,18 +42,18 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
 
-def create_df_summary(f, dt, idsim, plant_role=""):
+def create_df_summary(f, coordinates, idsim, plant_role="", preserve_raw=False):
     remove_comma(f)
-    if dt == 1: c = get_coord(idsim)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
-    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
+    df = df.reset_index()
+    if not preserve_raw:
+        df = df.rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", idsim)
     df.insert(2, "Texte", plant_role)
     df['time'] = df['ansemis'].astype(float).astype(int)
-    if dt == 1:
-        df['lon'] = c['lon']
-        df['lat'] = c['lat']
+    df['lon'] = coordinates.longitude
+    df['lat'] = coordinates.latitude
     return df
 
 
@@ -930,6 +925,8 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+    coordinate_resolver = CoordinateResolver(MasterInput_Connection)
+    coordinate_resolver.prefetch(row["idPoint"] for row in chunk)
 
     soil_ids = {
         row["idsoil"] for row in chunk if row["idsoil"] is not None
@@ -1130,7 +1127,7 @@ def process_chunk(*args):
 
                 plant_df = create_df_summary(
                     report_path,
-                    dt,
+                    coordinate_resolver.resolve(row["idPoint"]),
                     idsim,
                     plant_role,
                 )
@@ -1305,7 +1302,11 @@ def _main_standard(simulations=None):
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
 
-    data = fetch_data_from_sqlite(mi) if simulations is None else simulations
+    if simulations is None:
+        simulations = keep_simulations_with_weather(
+            fetch_data_from_sqlite(mi), mi, "Stics", directoryPath
+        )
+    data = simulations
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     n_simulations = len(data)
@@ -1578,20 +1579,22 @@ def save_summary_output(result_path, master_input):
     )
     dataframe = dataframe[summary_cols]
 
+    output_configuration = OutputConfiguration.from_files(
+        GlobalVariables.get("outputVariablesConfig"),
+        GlobalVariables.get("outputSelectionsConfig"),
+        GlobalVariables.get("profileVariablesConfig"),
+    )
+    output_selection = GlobalVariables.get("outputSelection", "legacy")
     connection = sqlite3.connect(master_input)
     try:
-        summary_columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(SummaryOutput)")
-        }
-        if "SeasonOrder" not in summary_columns:
-            connection.execute(
-                "ALTER TABLE SummaryOutput ADD COLUMN SeasonOrder INTEGER"
-            )
-        connection.execute("DELETE FROM SummaryOutput WHERE Model = 'Stics'")
-        dataframe.to_sql("SummaryOutput", connection, if_exists="append", index=False)
+        added_columns = output_configuration.replace_model_summary_rows(
+            connection, dataframe, "Stics", output_selection
+        )
         connection.commit()
     finally:
         connection.close()
+    if added_columns:
+        print("SummaryOutput columns added: " + ", ".join(added_columns), flush=True)
     print(f"✅ {len(dataframe)} rows inserted into SummaryOutput.", flush=True)
 
 
@@ -1703,6 +1706,9 @@ def main():
         ]
         if not simulations:
             raise ValueError(f"STICS simulation {target_idsim!r} was not found")
+    simulations = keep_simulations_with_weather(
+        simulations, mi, "Stics", GlobalVariables.get("directorypath", os.getcwd())
+    )
 
     standard, successive = simulations, []
 

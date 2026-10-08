@@ -19,9 +19,17 @@ import uuid
 import pandas as pd
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.soil_repository import SoilDataRepository
 from modfilegen.irrigation_repository import IrrigationRepository
+from modfilegen.output_configuration import OutputConfiguration
+from modfilegen.Converter.SticsConverter.summary_output import (
+    build_rap_mod,
+    stics_report_fields,
+    transform_summary_dataframe,
+)
 from . import sticsclimatconverter
 from . import sticsficiniconverter
 from . import sticsficplt1converter
@@ -51,7 +59,6 @@ REQUIRED_CROP_COLUMNS = {
     "SeasonOrder",
     "PlantOrder",
     "sowingdate",
-    "DHarvest",
 }
 REPORT_HEADER = (
     "P_usm;wlieu;ansemis;P_iwater;ancours;ifin;nbdays;P_ichsl;group;"
@@ -78,6 +85,30 @@ def simulation_end_date(simulation):
 
 def _table_columns(connection, table):
     return {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+
+
+def _first_operation_offset(connection, plant):
+    """Return the earliest sowing-relative operation offset for one plant."""
+    offsets = [0]
+    operation_sources = (
+        ("SoilTillageOperations", "SoilTillPolicyCode", "SoilTillPolicyCode", "DSTill"),
+        ("OrganicFOperations", "OFertiPolicyCode", "OFertiPolicyCode", "Dferti"),
+        ("InorganicFOperations", "InoFertiPolicyCode", "InorgFertiPolicyCode", "Dferti"),
+        ("IrrigationFOperations", "IrrigationPolicyCode", "IrrigationPolicyCode", "DIrrigation"),
+    )
+    for table, plant_policy_column, operation_policy_column, date_column in operation_sources:
+        policy_value = plant.get(plant_policy_column)
+        if policy_value is None or pd.isna(policy_value):
+            continue
+        columns = _table_columns(connection, table)
+        if operation_policy_column not in columns or date_column not in columns:
+            continue
+        rows = connection.execute(
+            f"SELECT {date_column} FROM {table} WHERE {operation_policy_column} = ?",
+            (str(policy_value),),
+        )
+        offsets.extend(int(row[0]) for row in rows if row[0] is not None)
+    return min(offsets)
 
 
 def fetch_rotation_seasons(connection, simulation):
@@ -115,7 +146,7 @@ def fetch_rotation_seasons(connection, simulation):
     if offset_column != "SeasonYearOffset":
         dataframe["SeasonYearOffset"] = dataframe[offset_column]
 
-    for column in ("SeasonOrder", "PlantOrder", "SeasonYearOffset", "sowingdate", "DHarvest"):
+    for column in ("SeasonOrder", "PlantOrder", "SeasonYearOffset", "sowingdate"):
         dataframe[column] = pd.to_numeric(dataframe[column], errors="raise").astype(int)
 
     orders = sorted(dataframe["SeasonOrder"].unique().tolist())
@@ -162,8 +193,7 @@ def fetch_rotation_seasons(connection, simulation):
     # annual pattern whose first occurrence is simply in StartYear + 1.
     pattern_years = maximum_offset - minimum_offset + 1
 
-    seasons = []
-    previous_end = None
+    occurrences = []
     cycle_index = 0
     reached_experiment_end = False
     while not reached_experiment_end:
@@ -176,55 +206,65 @@ def fetch_rotation_seasons(connection, simulation):
             plants = [dict(plant) for plant in template["Plants"]]
             for plant in plants:
                 plant["SowingDate"] = julian_date(sowing_year, plant["sowingdate"])
-                plant["HarvestDate"] = plant["SowingDate"] + timedelta(
-                    days=plant["DHarvest"]
+                plant["FirstOperationDate"] = plant["SowingDate"] + timedelta(
+                    days=_first_operation_offset(connection, plant)
                 )
 
-            first_sowing = min(plant["SowingDate"] for plant in plants)
-            if first_sowing > experiment_end:
+            first_operation = min(plant["FirstOperationDate"] for plant in plants)
+            if first_operation > experiment_end:
                 reached_experiment_end = True
                 break
 
-            season_start = (
-                experiment_start if previous_end is None else previous_end + timedelta(days=1)
-            )
-            if first_sowing < season_start:
+            if occurrences and first_operation <= occurrences[-1]["FirstOperationDate"]:
                 raise ValueError(
-                    f"Repeated season {len(seasons) + 1} (management season "
-                    f"{template['ManagementSeasonOrder']}) is sown on {first_sowing}, "
-                    f"before its period starts on {season_start}"
+                    f"Repeated season {len(occurrences) + 1} (management season "
+                    f"{template['ManagementSeasonOrder']}) has its first operation on "
+                    f"{first_operation}, not after the preceding season's first operation "
+                    f"on {occurrences[-1]['FirstOperationDate']}"
                 )
 
-            calculated_end = max(plant["HarvestDate"] for plant in plants)
-            season_end = min(calculated_end, experiment_end)
-            if calculated_end > experiment_end:
-                for plant in plants:
-                    plant["HarvestDate"] = min(plant["HarvestDate"], experiment_end)
-                reached_experiment_end = True
-
-            seasons.append(
+            occurrences.append(
                 {
-                    "SeasonOrder": len(seasons) + 1,
+                    "SeasonOrder": len(occurrences) + 1,
                     "ManagementSeasonOrder": template["ManagementSeasonOrder"],
                     "CycleIndex": cycle_index,
-                    "StartDate": season_start,
-                    "EndDate": season_end,
                     "SeasonYearOffset": repeated_offset,
                     "PatternYearOffset": template["PatternYearOffset"],
+                    "FirstOperationDate": first_operation,
                     "IsMixedCrop": template["IsMixedCrop"],
                     "Plants": plants,
                 }
             )
-            previous_end = season_end
             seasons_added += 1
-            if reached_experiment_end:
-                break
 
         if seasons_added == 0:
             break
         cycle_index += 1
 
-    return seasons
+    if not occurrences:
+        return []
+    if occurrences[0]["FirstOperationDate"] < experiment_start:
+        raise ValueError(
+            f"The first season operation on {occurrences[0]['FirstOperationDate']} "
+            f"precedes the simulation start on {experiment_start}"
+        )
+
+    for index, season in enumerate(occurrences):
+        season["StartDate"] = (
+            experiment_start if index == 0 else season["FirstOperationDate"]
+        )
+        season["EndDate"] = (
+            occurrences[index + 1]["FirstOperationDate"] - timedelta(days=1)
+            if index + 1 < len(occurrences)
+            else experiment_end
+        )
+        if season["EndDate"] < season["StartDate"]:
+            raise ValueError(
+                f"Season {season['SeasonOrder']} ends before it starts: "
+                f"{season['StartDate']} -> {season['EndDate']}"
+            )
+
+    return occurrences
 
 
 def build_season_row(simulation, season):
@@ -329,7 +369,19 @@ def create_context(
     mi, md, directory_path, temp_dir, pltfolder, package, dt,
     soil_ids=None, q0_strategy="default", management_ids=None, point_ids=None,
 ):
-    rap, var, prof = load_static_stics_files(package)
+    template_rap, var, prof = load_static_stics_files(package)
+    output_configuration = OutputConfiguration.from_files(
+        GlobalVariables.get("outputVariablesConfig"),
+        GlobalVariables.get("outputSelectionsConfig"),
+        GlobalVariables.get("profileVariablesConfig"),
+    )
+    output_selection = GlobalVariables.get("outputSelection", "legacy")
+    rap = build_rap_mod(
+        output_configuration, output_selection, template_rap, model="sticsv11"
+    )
+    report_fields = stics_report_fields(
+        output_configuration, output_selection, model="sticsv11"
+    )
     context = {
         "directory_path": directory_path,
         "temp_dir": temp_dir,
@@ -343,6 +395,13 @@ def create_context(
         "master": sqlite3.connect(mi),
         "dictionary": sqlite3.connect(md),
         "q0_strategy": q0_strategy,
+        "output_configuration": output_configuration,
+        "output_selection": output_selection,
+        "report_header": ";".join([
+            "P_usm", "wlieu", "ansemis", "P_iwater", "ancours", "ifin",
+            "nbdays", "P_ichsl", "group", "P_codeplante", "stade",
+            "nomversion", *report_fields,
+        ]),
         "paramsol_cache": {},
     }
     soil_ids = set(soil_ids or ())
@@ -358,6 +417,8 @@ def create_context(
     context["parameter_resolver"].prefetch_point(
         "sticsv11", {"station"}, set(point_ids or ())
     )
+    context["coordinate_resolver"] = CoordinateResolver(context["master"])
+    context["coordinate_resolver"].prefetch(set(point_ids or ()))
     context["soil_repository"] = SoilDataRepository(context["master"])
     context["soil_repository"].prefetch(soil_ids)
     context["irrigation_repository"] = IrrigationRepository(context["master"])
@@ -460,23 +521,32 @@ def run_stics(usmdir, output_dir, dailyoutput=0):
     )
 
 
-def collect_reports(simulation, season, season_key, directory_path, dt):
+def collect_reports(
+    simulation, season, season_key, directory_path, coordinates, report_header
+):
     if season["IsMixedCrop"]:
-        reports = [("A", f"mod_rapportA_{season_key}.sti"), ("P", f"mod_rapportP_{season_key}.sti")]
+        reports = [
+            ("P", 1, f"mod_rapportP_{season_key}.sti"),
+            ("A", 2, f"mod_rapportA_{season_key}.sti"),
+        ]
     else:
-        reports = [("", f"mod_rapport_{season_key}.sti")]
+        reports = [("", 1, f"mod_rapport_{season_key}.sti")]
 
     dataframes = []
-    for plant_role, filename in reports:
+    for plant_role, plant_order, filename in reports:
         report = Path(directory_path) / filename
         if not report.exists():
             print(f"Warning: {report} does not exist", flush=True)
             continue
         lines = report.read_text().splitlines()
         if lines and "ansemis" not in lines[0]:
-            report.write_text(REPORT_HEADER + "\n" + "\n".join(lines) + "\n")
-        dataframe = create_df_summary(str(report), dt, str(simulation["idsim"]), plant_role)
+            report.write_text(report_header + "\n" + "\n".join(lines) + "\n")
+        dataframe = create_df_summary(
+            str(report), coordinates, str(simulation["idsim"]), plant_role,
+            preserve_raw=True,
+        )
         dataframe.insert(3, "SeasonOrder", season["SeasonOrder"])
+        dataframe.insert(4, "PlantOrder", plant_order)
         dataframes.append(dataframe)
         report.unlink()
     return dataframes
@@ -524,7 +594,14 @@ def process_simulation(
                     )
             normalize_successive_recup(usmdir)
             dataframes.extend(
-                collect_reports(simulation, season, season_key, directory_path, dt)
+                collect_reports(
+                    simulation,
+                    season,
+                    season_key,
+                    directory_path,
+                    context["coordinate_resolver"].resolve(simulation["idPoint"]),
+                    context["report_header"],
+                )
             )
             if int(dailyoutput) == 1:
                 daily_dataframes.extend(
@@ -615,7 +692,9 @@ def main(simulations=None):
     started = time()
     prepare_sqlite_indexes(mi, md)
     if simulations is None:
-        simulations = fetch_data_from_sqlite(mi)
+        simulations = keep_simulations_with_weather(
+            fetch_data_from_sqlite(mi), mi, "Stics", directory_path
+        )
     if not simulations:
         print("No simulation to process.", flush=True)
         return None
@@ -638,9 +717,32 @@ def main(simulations=None):
         print("No STICS reports produced.", flush=True)
         return None
 
+    output_configuration = OutputConfiguration.from_files(
+        GlobalVariables.get("outputVariablesConfig"),
+        GlobalVariables.get("outputSelectionsConfig"),
+        GlobalVariables.get("profileVariablesConfig"),
+    )
+    output_selection = GlobalVariables.get("outputSelection", "legacy")
+    raw_summary = pd.concat(frames, ignore_index=True, sort=False)
+    canonical_summary = transform_summary_dataframe(
+        raw_summary, output_configuration, output_selection, model="sticsv11"
+    )
     result_path = Path(directory_path) / f"{uuid.uuid4()}_stics_successive.csv"
-    pd.concat(frames, ignore_index=True).to_csv(result_path, index=False)
+    canonical_summary.to_csv(result_path, index=False)
     print(f"Results saved to {result_path}", flush=True)
+
+    if dt == 0:
+        connection = sqlite3.connect(mi)
+        try:
+            added_columns = output_configuration.replace_model_summary_rows(
+                connection, canonical_summary, "Stics", output_selection
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        if added_columns:
+            print("SummaryOutput columns added: " + ", ".join(added_columns), flush=True)
+        print(f"✅ {len(canonical_summary)} rows inserted into SummaryOutput.", flush=True)
     print(f"STICS successive total time: {time() - started:.2f}s", flush=True)
     return str(result_path)
 

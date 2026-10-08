@@ -19,15 +19,16 @@ from pathlib import Path
 from time import time
 import subprocess
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
-from .summary_output import transform_summary_dataframe
+from .summary_output import append_canonical_summary_csv
 import uuid
 import sys
 import traceback
 import concurrent.futures
 from joblib import Parallel, delayed
-
 
 
 def create_idJourClim(df):
@@ -186,8 +187,25 @@ def main():
         GlobalVariables.get("profileVariablesConfig"),
     )
     output_selection = GlobalVariables.get("outputSelection", "legacy")
+    os.makedirs(directoryPath, exist_ok=True)
+    result_path = os.path.join(directoryPath, f"{uuid.uuid4()}_celsius.csv")
+    while os.path.exists(result_path):
+        result_path = os.path.join(directoryPath, f"{uuid.uuid4()}_celsius.csv")
     
-    data = fetch_data_from_sqlite(mi)
+    data = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Celsius", directoryPath
+    )
+    with sqlite3.connect(mi) as coordinate_connection:
+        coordinate_resolver = CoordinateResolver(coordinate_connection)
+        coordinate_resolver.prefetch(row["idPoint"] for row in data)
+        simulation_context = {}
+        for row in data:
+            coordinates = coordinate_resolver.resolve(row["idPoint"])
+            simulation_context[str(row["idsim"])] = {
+                "lat": coordinates.latitude,
+                "lon": coordinates.longitude,
+                "time": int(row["StartYear"]),
+            }
     print(f"📊 Total simulations to process: {len(data)}", flush=True)
     
     # Split data into chunks
@@ -207,18 +225,24 @@ def main():
             conn.execute("DELETE FROM OutputSynt")
             conn.commit()
         
-        # Clear SummaryOutput for Celsius
-        with sqlite3.connect(mi) as conn:
-            added_columns = output_configuration.ensure_summary_output_schema(
-                conn, output_selection
-            )
-            conn.execute("DELETE FROM SummaryOutput WHERE lower(Model) = 'celsius'")
-            conn.commit()
-        if added_columns:
-            print("SummaryOutput columns added: " + ", ".join(added_columns), flush=True)
+        if dt == 0:
+            with sqlite3.connect(mi) as conn:
+                added_columns = output_configuration.ensure_summary_output_schema(
+                    conn, output_selection
+                )
+                conn.execute(
+                    "DELETE FROM SummaryOutput WHERE lower(Model) = 'celsius'"
+                )
+                conn.commit()
+            if added_columns:
+                print(
+                    "SummaryOutput columns added: " + ", ".join(added_columns),
+                    flush=True,
+                )
         
         total_rows = 0
         total_chunks = len(args_list)
+        write_csv_header = True
 
         # Stream results as they complete — workers stay busy the whole time
         results = Parallel(n_jobs=nthreads, backend="loky", return_as="generator_unordered")(
@@ -230,12 +254,19 @@ def main():
                 with sqlite3.connect(celsius) as conn:
                     chunk_df.to_sql("OutputSynt", conn, if_exists='append', index=False)
                     conn.commit()
-                
+
+                summary_df = append_canonical_summary_csv(
+                    chunk_df,
+                    result_path,
+                    output_configuration,
+                    output_selection,
+                    model="celsius",
+                    write_header=write_csv_header,
+                    simulation_context=simulation_context,
+                )
+                write_csv_header = False
+
                 if dt == 0:
-                    summary_df = transform_summary_dataframe(
-                        chunk_df, output_configuration, output_selection, model="celsius"
-                    )
-                    
                     with sqlite3.connect(mi) as conn:
                         summary_df.to_sql(
                             output_configuration.summary_table,
@@ -254,6 +285,7 @@ def main():
             return
         
         print(f"✅ Total rows in OutputSynt: {total_rows}", flush=True)
+        print(f"✅ Celsius results saved to {result_path}", flush=True)
         print(f"Celsius total time: {time()-start:.2f}s", flush=True)
     except Exception as ex:
         print("❌ Error during parallel processing:", flush=True)

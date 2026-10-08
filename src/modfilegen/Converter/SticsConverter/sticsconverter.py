@@ -1,12 +1,17 @@
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
-from .summary_output import build_rap_mod, transform_summary_dataframe
+from .summary_output import (
+    build_rap_mod,
+    transform_summary_dataframe,
+    write_canonical_summary_csv,
+)
 from . import sticstempoparv6converter, sticsficiniconverter, sticsnewtravailconverter, sticsparamsolconverter
 from . import sticstempoparconverter, sticsclimatconverter, sticsfictec1converter
 from . import sticsstationconverter, sticsficplt1converter
 import subprocess
-import re
 import os
 import sqlite3
 from sqlite3 import Connection
@@ -28,13 +33,6 @@ SUMMARY_COLS = ["Model","Idsim","Texte","Planting","Emergence","Ant","Mat","Biom
 DAILY_OUTPUT_TABLE = "SticsDailyOutput"
 PROFILE_OUTPUT_TABLE = "SticsProfile"
 
-def get_coord(d):
-    res = re.findall(r"([-]?\d+[.]?\d+)[_]", d)
-    lat = float(res[0])
-    lon = float(res[1])
-    year = int(float(res[2]))
-    return {'lon': lon, 'lat': lat, 'year': year}
-
 def remove_comma(f):
     try:
         with open(f, "r") as fil:
@@ -47,11 +45,10 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
     
-def create_df_summary(f, dt):
+def create_df_summary(f, coordinates):
     #d_name = os.path.dirname(f).split(os.path.sep)[-1]
     d_name = Path(f).stem[len("mod_rapport_"):]
     remove_comma(f)
-    if dt == 1: c = get_coord(d_name)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
     df.columns = [column.strip() for column in df.columns]
     df = df.reset_index(drop=True)
@@ -59,9 +56,8 @@ def create_df_summary(f, dt):
     df.insert(1, "Idsim", d_name)
     df.insert(2, "Texte", "")
     df['time'] = df['ansemis'].astype(float).astype(int)
-    if dt == 1:
-        df['lon'] = c['lon']
-        df['lat'] = c['lat']
+    df['lon'] = coordinates.longitude
+    df['lat'] = coordinates.latitude
     return df
 
 
@@ -918,6 +914,8 @@ def process_chunk(*args):
 
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
+    coordinate_resolver = CoordinateResolver(MasterInput_Connection)
+    coordinate_resolver.prefetch(row["idPoint"] for row in chunk)
     
     dataframes = []
         
@@ -1046,7 +1044,9 @@ def process_chunk(*args):
             if not os.path.exists(mod_r):
                 print(f"Warning: {mod_r} does not exist")
                 continue
-            df = create_df_summary(mod_r, dt)
+            df = create_df_summary(
+                mod_r, coordinate_resolver.resolve(row["idPoint"])
+            )
             dataframes.append(df)
 
             if dailyoutput == 1:
@@ -1314,7 +1314,9 @@ def main():
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
 
-    data = fetch_data_from_sqlite(mi)
+    data = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Stics", directoryPath
+    )
     
     if resume_stics == 1:
         result_path = glob(os.path.join(directoryPath, "*_stics.csv"))
@@ -1341,7 +1343,7 @@ def main():
             result_path = os.path.join(directoryPath, f"{result_name}.csv")
         
     existing_canonical_summary = None
-    if dt == 0 and resume_stics == 1 and isinstance(result_path, str) and os.path.exists(result_path):
+    if resume_stics == 1 and isinstance(result_path, str) and os.path.exists(result_path):
         existing_result = pd.read_csv(result_path)
         configured_source_fields = {
             field
@@ -1359,11 +1361,9 @@ def main():
                 columns=output_configuration.summary_columns(output_selection)
             )
 
-    working_result_path = result_path
-    if dt == 0:
-        working_result_path = result_path + ".raw"
-        if os.path.exists(working_result_path):
-            os.remove(working_result_path)
+    working_result_path = result_path + ".raw"
+    if os.path.exists(working_result_path):
+        os.remove(working_result_path)
 
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
@@ -1489,17 +1489,21 @@ def main():
                 print("Warning: no STICS profile results were imported.", flush=True)
         print(f"STICS total time: {time()-start:.2f}s", flush=True)
 
-        if dt == 0:
-            raw_summary = pd.read_csv(working_result_path)
-            df_result = transform_summary_dataframe(
-                raw_summary, output_configuration, output_selection
+        if total_chunks_written or existing_canonical_summary is not None:
+            df_result = write_canonical_summary_csv(
+                working_result_path if total_chunks_written else None,
+                result_path,
+                output_configuration,
+                output_selection,
+                existing_canonical_summary,
             )
-            if existing_canonical_summary is not None:
-                df_result = pd.concat(
-                    [existing_canonical_summary, df_result], ignore_index=True
-                )
-            df_result.to_csv(result_path, index=False)
-            os.remove(working_result_path)
+            if os.path.exists(working_result_path):
+                os.remove(working_result_path)
+        else:
+            print("No data to process.", flush=True)
+            return
+
+        if dt == 0:
             with sqlite3.connect(mi) as summary_connection:
                 added_columns = output_configuration.ensure_summary_output_schema(
                     summary_connection, output_selection
@@ -1519,8 +1523,7 @@ def main():
                     flush=True,
                 )
             print(f"✅ {len(df_result)} rows inserted into SummaryOutput.", flush=True)
-            del raw_summary
-            del df_result
+        del df_result
 
     except Exception as ex:  
         print("Error during processing:", ex)

@@ -6,30 +6,34 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import uuid
 
 import pandas as pd
 
 from modfilegen import GlobalVariables
+from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.output_configuration import OutputConfiguration
 from modfilegen.Converter.CelsiusConverter.summary_output import (
+    add_spatial_time_columns,
     transform_summary_dataframe,
 )
 
 from .core import convert_database
 
 
-def _import_summary(master, celsius_database):
-    output_configuration = OutputConfiguration.from_files(
+def _output_configuration():
+    configuration = OutputConfiguration.from_files(
         GlobalVariables.get("outputVariablesConfig"),
         GlobalVariables.get("outputSelectionsConfig"),
         GlobalVariables.get("profileVariablesConfig"),
     )
-    output_selection = GlobalVariables.get("outputSelection", "legacy")
-    with sqlite3.connect(celsius_database) as source, sqlite3.connect(master) as target:
-        added_columns = output_configuration.ensure_summary_output_schema(
-            target, output_selection
-        )
-        target.execute("DELETE FROM SummaryOutput WHERE lower(Model)='celsiusv32'")
+    return configuration, GlobalVariables.get("outputSelection", "legacy")
+
+
+def _summary_dataframe(
+    master, celsius_database, output_configuration, output_selection
+):
+    with sqlite3.connect(celsius_database) as source:
         outputs = pd.read_sql_query(
             """
             SELECT o.*, s.Situation, s.codesuite
@@ -39,43 +43,88 @@ def _import_summary(master, celsius_database):
             """,
             source,
         )
-        if outputs.empty:
-            target.commit()
-            return
+    if outputs.empty:
+        return pd.DataFrame(
+            columns=output_configuration.summary_columns(output_selection)
+        )
 
-        season_orders = []
-        original_ids = []
-        for _, row in outputs.iterrows():
-            generated_id = str(row.get("Idsim", ""))
-            season_order = 1
-            if "__S" in generated_id:
-                try:
-                    season_order = int(generated_id.rsplit("__S", 1)[1][:3])
-                except ValueError:
-                    season_order = 1
-            season_orders.append(season_order)
-            original_ids.append(row.get("Situation") or generated_id)
-        outputs["Idsim"] = original_ids
-        outputs["SeasonOrder"] = season_orders
-        outputs["PlantOrder"] = 1
-        summary = transform_summary_dataframe(
-            outputs,
-            output_configuration,
-            output_selection,
-            model="celsiusv32",
+    season_orders = []
+    original_ids = []
+    for _, row in outputs.iterrows():
+        generated_id = str(row.get("Idsim", ""))
+        season_order = 1
+        if "__S" in generated_id:
+            try:
+                season_order = int(generated_id.rsplit("__S", 1)[1][:3])
+            except ValueError:
+                season_order = 1
+        season_orders.append(season_order)
+        original_ids.append(row.get("Situation") or generated_id)
+    outputs["Idsim"] = original_ids
+    outputs["SeasonOrder"] = season_orders
+    outputs["PlantOrder"] = 1
+    with sqlite3.connect(master) as source:
+        simulations = pd.read_sql_query(
+            "SELECT idsim, idPoint, StartYear FROM SimUnitList", source
+        ).to_dict(orient="records")
+        resolver = CoordinateResolver(source)
+        resolver.prefetch(row["idPoint"] for row in simulations)
+        simulation_context = {}
+        for simulation in simulations:
+            coordinates = resolver.resolve(simulation["idPoint"])
+            simulation_context[str(simulation["idsim"])] = {
+                "lat": coordinates.latitude,
+                "lon": coordinates.longitude,
+                "time": int(simulation["StartYear"]),
+            }
+    outputs = add_spatial_time_columns(outputs, simulation_context)
+    return transform_summary_dataframe(
+        outputs,
+        output_configuration,
+        output_selection,
+        model="celsiusv32",
+    )
+
+
+def _store_summary(master, summary, output_configuration, output_selection):
+    with sqlite3.connect(master) as target:
+        added_columns = output_configuration.ensure_summary_output_schema(
+            target, output_selection
         )
-        summary.to_sql(
-            output_configuration.summary_table,
-            target,
-            if_exists="append",
-            index=False,
-        )
+        target.execute("DELETE FROM SummaryOutput WHERE lower(Model)='celsiusv32'")
+        if not summary.empty:
+            summary.to_sql(
+                output_configuration.summary_table,
+                target,
+                if_exists="append",
+                index=False,
+            )
         target.commit()
     if added_columns:
         print(
             "SummaryOutput columns added: " + ", ".join(added_columns),
             flush=True,
         )
+
+
+def _import_summary(master, celsius_database):
+    """Backward-compatible import of canonical CELSIUS V32 synthesis rows."""
+    output_configuration, output_selection = _output_configuration()
+    summary = _summary_dataframe(
+        master, celsius_database, output_configuration, output_selection
+    )
+    _store_summary(master, summary, output_configuration, output_selection)
+    return summary
+
+
+def _write_summary_csv(summary, directory):
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    result_path = directory / f"{uuid.uuid4()}_celsius.csv"
+    while result_path.exists():
+        result_path = directory / f"{uuid.uuid4()}_celsius.csv"
+    summary.to_csv(result_path, index=False)
+    return result_path
 
 
 def _set_daily_output(celsius_database, enabled):
@@ -288,13 +337,15 @@ def run_model(celsius_database, executable="celsiusV32", workers=1):
 
 def run(mode):
     master = GlobalVariables.get("dbMasterInput")
+    models_dictionary = GlobalVariables.get("dbModelsDictionary")
     template = (
         GlobalVariables.get("dbCelsiusV32Template")
         or GlobalVariables.get("dbCelsius")
     )
-    if not master or not template:
+    if not master or not models_dictionary or not template:
         raise ValueError(
-            "dbMasterInput and dbCelsiusV32Template (or dbCelsius) must be set"
+            "dbMasterInput, dbModelsDictionary, and "
+            "dbCelsiusV32Template (or dbCelsius) must be set"
         )
 
     output = GlobalVariables.get("celsiusV32Output")
@@ -309,12 +360,32 @@ def run(mode):
     simulation_ids = GlobalVariables.get("celsiusIdsim")
     if isinstance(simulation_ids, str):
         simulation_ids = [simulation_ids]
-    convert_database(master, output, mode=mode, simulation_ids=simulation_ids)
+    convert_database(
+        master,
+        output,
+        mode=mode,
+        simulation_ids=simulation_ids,
+        report_directory=GlobalVariables.get("directorypath") or output.parent,
+        models_dictionary=models_dictionary,
+    )
     _set_daily_output(output, int(GlobalVariables.get("dailyoutput", 0)) == 1)
     if int(GlobalVariables.get("runCelsiusV32", 1)):
         executable = str(GlobalVariables.get("celsiusV32Executable", "celsiusV32"))
         workers = max(1, int(GlobalVariables.get("nthreads", 1) or 1))
         run_model(output, executable, workers)
+        output_configuration, output_selection = _output_configuration()
+        summary = _summary_dataframe(
+            master, output, output_configuration, output_selection
+        )
+        result_directory = (
+            GlobalVariables.get("directorypath")
+            or GlobalVariables.get("tempDir")
+            or output.parent
+        )
+        result_path = _write_summary_csv(summary, result_directory)
+        print(f"CELSIUS V32 results saved to {result_path}", flush=True)
         if int(GlobalVariables.get("dt", 1)) == 0:
-            _import_summary(master, output)
+            _store_summary(
+                master, summary, output_configuration, output_selection
+            )
     return output

@@ -5,6 +5,23 @@ import pandas as pd
 from modfilegen.output_configuration import OutputConfigurationError
 
 
+def add_spatial_time_columns(dataframe, simulation_context):
+    """Add coordinates and start year resolved from MasterInput metadata."""
+    result = dataframe.copy()
+    id_column = next(
+        (column for column in result.columns if str(column).lower() == "idsim"),
+        None,
+    )
+    if id_column is None:
+        raise OutputConfigurationError("CELSIUS output requires an Idsim column")
+
+    metadata = [simulation_context.get(str(value), {}) for value in result[id_column]]
+    result["lon"] = [value.get("lon") for value in metadata]
+    result["lat"] = [value.get("lat") for value in metadata]
+    result["time"] = [value.get("time") for value in metadata]
+    return result
+
+
 def transform_summary_dataframe(
     dataframe, output_configuration, selection="legacy", model="celsius"
 ):
@@ -76,3 +93,26 @@ def transform_summary_dataframe(
         if column in result.columns:
             result[column] = pd.to_numeric(result[column], errors="coerce")
     return result[list(output_configuration.summary_columns(selection))]
+
+
+def append_canonical_summary_csv(
+    dataframe,
+    result_path,
+    output_configuration,
+    selection="legacy",
+    model="celsius",
+    write_header=True,
+    simulation_context=None,
+):
+    """Transform one raw CELSIUS batch and append it to a canonical CSV."""
+    dataframe = add_spatial_time_columns(dataframe, simulation_context or {})
+    summary = transform_summary_dataframe(
+        dataframe, output_configuration, selection, model
+    )
+    summary.to_csv(
+        result_path,
+        mode="a",
+        header=write_header,
+        index=False,
+    )
+    return summary

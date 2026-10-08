@@ -3,8 +3,9 @@
 
 This converter uses DSSAT's native sequence mode (RNMODE = Q).  One
 SimUnitList row describes the simulation unit and the CropManagement rows
-linked by idMangt describe its ordered seasons.  The seasons are converted
-into one SQX experiment file and a versioned DSSBatch file.
+linked by idMangt describe its ordered season pattern. The pattern is repeated
+until the SimUnitList end, then converted into one SQX experiment file and a
+versioned DSSBatch file.
 """
 
 from __future__ import annotations
@@ -26,6 +27,13 @@ import pandas as pd
 from joblib import Parallel, delayed, parallel_backend
 
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import (
+    keep_rows_in_simulation_period,
+    keep_simulations_with_weather,
+)
+from modfilegen.coordinate_resolver import CoordinateResolver
+from modfilegen.output_configuration import OutputConfiguration
+from .summary_output import transform_summary_dataframe
 from . import dssatcultivarconverter, dssatsoilconverter, dssatxconverter
 from . import dssatweatherconverter_v2 as dssatweatherconverter
 from .dssatconverter import export as prepare_sqlite_indexes
@@ -291,10 +299,22 @@ def shift_section_dates(sections, section, days, reference_year):
     sections[section] = shifted
 
 
+def season_year_offset(management):
+    """Return the sowing year offset of one management season.
+
+    ``SeasonYearOffset`` is the current MasterInput column; ``SowingYearOffset``
+    is accepted for databases created before the rename.
+    """
+    for name in ("SeasonYearOffset", "SowingYearOffset"):
+        if name in management:
+            return int(management[name])
+    raise KeyError("SeasonYearOffset")
+
+
 def apply_successive_management_dates(sections, simunit_row, season_row, management):
     """Replace legacy standard-mode dates with successive calendar dates."""
     planting = julian_date(
-        int(simunit_row["StartYear"]) + int(management["SowingYearOffset"]),
+        int(simunit_row["StartYear"]) + season_year_offset(management),
         int(management["sowingdate"]),
     )
     legacy_planting = julian_date(
@@ -366,7 +386,10 @@ def management_flags(id_sim, master_input_connection, management=None):
     params = [id_sim]
     if management is not None:
         query += " And CropManagement.SeasonOrder = ? And CropManagement.PlantOrder = ?"
-        params.extend([management["SeasonOrder"], management["PlantOrder"]])
+        params.extend([
+            management.get("TemplateSeasonOrder", management["SeasonOrder"]),
+            management["PlantOrder"],
+        ])
     dataframe = pd.read_sql_query(query, master_input_connection, params=params)
     if dataframe.empty:
         raise ValueError(
@@ -382,8 +405,14 @@ def successive_managements(row, master_input_connection):
         item[1]
         for item in master_input_connection.execute("PRAGMA table_info(CropManagement)")
     }
-    required = {"PlantOrder", "SeasonOrder", "SowingYearOffset"}
+    offset_column = next(
+        (name for name in ("SeasonYearOffset", "SowingYearOffset") if name in columns),
+        None,
+    )
+    required = {"PlantOrder", "SeasonOrder"}
     missing = sorted(required.difference(columns))
+    if offset_column is None:
+        missing.append("SeasonYearOffset (or legacy SowingYearOffset)")
     if missing:
         raise ValueError(
             "CropManagement is missing DSSAT successive columns: "
@@ -402,6 +431,8 @@ def successive_managements(row, master_input_connection):
     )
     if dataframe.empty:
         raise ValueError(f"No CropManagement rows found for {row['idMangt']!r}")
+    if offset_column != "SeasonYearOffset":
+        dataframe["SeasonYearOffset"] = dataframe[offset_column]
 
     duplicated_seasons = dataframe.groupby("SeasonOrder").size()
     duplicated_seasons = duplicated_seasons[duplicated_seasons > 1]
@@ -414,58 +445,152 @@ def successive_managements(row, master_input_connection):
     return dataframe.to_dict(orient="records")
 
 
-def season_simunit_row(
-    simunit_row, management, is_last_season=False, previous_season_end=None
-):
-    """Create the dated row used by the legacy one-management block writers."""
-    row = dict(simunit_row)
-    sowing_year = int(simunit_row["StartYear"]) + int(management["SowingYearOffset"])
+def first_operation_offset(management, master_input_connection=None):
+    """Return the earliest sowing-relative operation offset for a season."""
+    offsets = [0]
+    if master_input_connection is None:
+        return 0
+    sources = (
+        ("SoilTillageOperations", "SoilTillPolicyCode", "SoilTillPolicyCode", "DSTill"),
+        ("OrganicFOperations", "OFertiPolicyCode", "OFertiPolicyCode", "Dferti"),
+        ("InorganicFOperations", "InoFertiPolicyCode", "InorgFertiPolicyCode", "Dferti"),
+        ("IrrigationFOperations", "IrrigationPolicyCode", "IrrigationPolicyCode", "DIrrigation"),
+    )
+    tables = {
+        str(row[0]).lower(): str(row[0])
+        for row in master_input_connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    for table, management_policy, operation_policy, date_column in sources:
+        actual_table = tables.get(table.lower())
+        policy = management.get(management_policy)
+        if actual_table is None or not policy_code_enabled(policy):
+            continue
+        columns = {
+            str(row[1]).lower()
+            for row in master_input_connection.execute(
+                f"PRAGMA table_info([{actual_table}])"
+            )
+        }
+        if operation_policy.lower() not in columns or date_column.lower() not in columns:
+            continue
+        rows = master_input_connection.execute(
+            f"SELECT [{date_column}] FROM [{actual_table}] "
+            f"WHERE lower([{operation_policy}])=lower(?)",
+            (str(policy),),
+        )
+        offsets.extend(int(row[0]) for row in rows if row[0] is not None)
+    return min(offsets)
+
+
+def management_first_operation_date(management, simunit_row, connection=None):
     sowing_day = int(management["sowingdate"])
     if not 1 <= sowing_day <= 366:
         raise ValueError(
             f"Invalid sowingdate {sowing_day} for season {management['SeasonOrder']}; "
-            "use SowingYearOffset for years after the first"
+            "use SeasonYearOffset for years after the first"
         )
+    sowing_year = int(simunit_row["StartYear"]) + season_year_offset(management)
     planting = julian_date(sowing_year, sowing_day)
-    harvest = planting + timedelta(days=max(1, int(management["DHarvest"])))
+    return planting + timedelta(
+        days=first_operation_offset(management, connection)
+    )
+
+
+def expand_successive_managements(
+    simunit_row, managements, master_input_connection=None
+):
+    """Repeat a management pattern until the current simulation ends."""
+    if not managements:
+        return []
+    orders = [int(management["SeasonOrder"]) for management in managements]
+    if orders != list(range(1, len(orders) + 1)):
+        raise ValueError(
+            f"SeasonOrder must be contiguous from 1; found {orders}"
+        )
+    offsets = [season_year_offset(management) for management in managements]
+    minimum_offset = min(offsets)
+    if minimum_offset < 0:
+        raise ValueError(
+            f"SeasonYearOffset cannot be negative; found {minimum_offset}"
+        )
+    pattern_years = max(offsets) - minimum_offset + 1
+    simulation_end = row_end_date(simunit_row)
+    occurrences = []
+    cycle_index = 0
+    reached_simulation_end = False
+    while not reached_simulation_end:
+        seasons_added = 0
+        for template in managements:
+            occurrence = dict(template)
+            occurrence["TemplateSeasonOrder"] = int(template["SeasonOrder"])
+            occurrence["CycleIndex"] = cycle_index
+            occurrence["SeasonOrder"] = len(occurrences) + 1
+            occurrence["SeasonYearOffset"] = (
+                season_year_offset(template) + cycle_index * pattern_years
+            )
+            first_operation = management_first_operation_date(
+                occurrence, simunit_row, master_input_connection
+            )
+            if first_operation > simulation_end:
+                reached_simulation_end = True
+                break
+            occurrences.append(occurrence)
+            seasons_added += 1
+        if seasons_added == 0:
+            break
+        cycle_index += 1
+    return occurrences
+
+
+def successive_season_rows(
+    simunit_row, managements, master_input_connection=None
+):
+    """Build operation-delimited continuous periods for one simulation unit."""
+    if not managements:
+        return []
     simulation_start = row_start_date(simunit_row)
     simulation_end = row_end_date(simunit_row)
-    season_start = (
-        previous_season_end + timedelta(days=1)
-        if previous_season_end is not None
-        else simulation_start
-    )
-    if is_last_season and harvest > simulation_end:
-        harvest = simulation_end
-    if (
-        season_start < simulation_start
-        or season_start > simulation_end
-        or planting < season_start
-        or planting > simulation_end
-        or harvest > simulation_end
-    ):
+    first_operations = [
+        management_first_operation_date(
+            management, simunit_row, master_input_connection
+        )
+        for management in managements
+    ]
+    if first_operations[0] < simulation_start:
         raise ValueError(
-            f"Season {management['SeasonOrder']} ({planting} to {harvest}) is outside "
-            f"simulation {simunit_row['idsim']} ({simulation_start} to {simulation_end})"
+            f"The first DSSAT operation on {first_operations[0]} precedes "
+            f"simulation start {simulation_start}"
         )
-    row["StartYear"], row["StartDay"] = year_day(season_start)
-    row["EndYear"], row["EndDay"] = year_day(harvest)
-    return row
+    for index in range(1, len(first_operations)):
+        if first_operations[index] <= first_operations[index - 1]:
+            raise ValueError(
+                f"Season {managements[index]['SeasonOrder']} first operation on "
+                f"{first_operations[index]} is not after the preceding season "
+                f"operation on {first_operations[index - 1]}"
+            )
 
-
-def successive_season_rows(simunit_row, managements):
-    """Build continuous season periods for one simulation unit."""
     seasons = []
-    previous_season_end = None
-    for index, management in enumerate(managements):
-        season = season_simunit_row(
-            simunit_row,
-            management,
-            is_last_season=index == len(managements) - 1,
-            previous_season_end=previous_season_end,
+    for index, (management, first_operation) in enumerate(
+        zip(managements, first_operations)
+    ):
+        season_start = simulation_start if index == 0 else first_operation
+        season_end = (
+            first_operations[index + 1] - timedelta(days=1)
+            if index + 1 < len(first_operations)
+            else simulation_end
         )
-        seasons.append(season)
-        previous_season_end = row_end_date(season)
+        if season_start > season_end or season_end > simulation_end:
+            raise ValueError(
+                f"Season {management['SeasonOrder']} ({season_start} to {season_end}) "
+                f"is outside simulation {simunit_row['idsim']} "
+                f"({simulation_start} to {simulation_end})"
+            )
+        row = dict(simunit_row)
+        row["StartYear"], row["StartDay"] = year_day(season_start)
+        row["EndYear"], row["EndDay"] = year_day(season_end)
+        seasons.append(row)
     return seasons
 
 
@@ -490,7 +615,7 @@ def configure_season_connection(connection, simunit_row, management):
         """,
         (
             management["idMangt"],
-            management["SeasonOrder"],
+            management.get("TemplateSeasonOrder", management["SeasonOrder"]),
             management["PlantOrder"],
         ),
     )
@@ -505,6 +630,16 @@ def configure_season_connection(connection, simunit_row, management):
             simunit_row["EndYear"], simunit_row["EndDay"], simunit_row["idsim"],
         ),
     )
+    # The legacy X-file writer reads DHarvest while building its temporary
+    # *HARVEST block. Successive mode replaces HDATE with the computed season
+    # end immediately afterwards, so neutralize the legacy input here. This
+    # also keeps a NULL DHarvest from failing before that replacement occurs.
+    crop_columns = {
+        str(row[1]).lower()
+        for row in connection.execute("PRAGMA table_info(CropManagement)")
+    }
+    if "dharvest" in crop_columns:
+        connection.execute("UPDATE CropManagement SET DHarvest = 0")
     connection.commit()
     return connection
 
@@ -678,18 +813,15 @@ def generate_rotation_input(
     index,
     context,
     sequence_dir,
-    is_last_season=False,
-    previous_season_end=None,
+    season_row=None,
     season_database=None,
 ):
     single_dir = os.path.join(sequence_dir, f"_rotation_{index}")
     Path(single_dir).mkdir(parents=True, exist_ok=True)
-    season_row = season_simunit_row(
-        row,
-        management,
-        is_last_season=is_last_season,
-        previous_season_end=previous_season_end,
-    )
+    if season_row is None:
+        season_row = successive_season_rows(
+            row, [management], context["master_input_connection"]
+        )[0]
     connection = configure_season_connection(
         season_database, season_row, management
     )
@@ -735,26 +867,33 @@ def generate_rotation_input(
 
 def generate_successive_rotations(group, context, sequence_dir):
     row = group[0]
-    managements = successive_managements(row, context["master_input_connection"])
+    management_templates = successive_managements(
+        row, context["master_input_connection"]
+    )
+    managements = expand_successive_managements(
+        row, management_templates, context["master_input_connection"]
+    )
     season_database = successive_group_connection(
         context["master_input_connection"]
     )
     try:
         rotations = []
-        previous_season_end = None
-        for index, management in enumerate(managements):
+        season_rows = successive_season_rows(
+            row, managements, context["master_input_connection"]
+        )
+        for index, (management, season_row) in enumerate(
+            zip(managements, season_rows)
+        ):
             rotation = generate_rotation_input(
                 row,
                 management,
                 index + 1,
                 context,
                 sequence_dir,
-                is_last_season=index == len(managements) - 1,
-                previous_season_end=previous_season_end,
+                season_row=season_row,
                 season_database=season_database,
             )
             rotations.append(rotation)
-            previous_season_end = row_end_date(rotation.row)
         return rotations
     finally:
         season_database.close()
@@ -834,7 +973,7 @@ def export_grouped_weather(group, context, sequence_dir):
         )
 
 
-def transform_sequence(summary_path, rotations):
+def transform_sequence(summary_path, rotations, coordinates=None):
     with open(summary_path, "r") as handle:
         lines = handle.readlines()
     if len(lines) < 5:
@@ -876,51 +1015,21 @@ def transform_sequence(summary_path, rotations):
             if repeated_single_rotation
             else int(rotation.management["SeasonOrder"])
         )
-        planting_year = int(record.get("PDAT", 0)) // 1000
-        record["ys"] = planting_year or int(row["StartYear"])
-        if repeated_single_rotation and records:
-            record["y0"] = int(records[-1]["ys"])
-        else:
-            record["y0"] = int(
-                rotation.row["StartYear"]
-                if rotation.index == 1
-                else rotations[rotation.index - 2].row["StartYear"]
-            )
-        coords = re.findall(r"([-]?\d+[.]?\d+)[_]", str(row["idsim"]))
-        if len(coords) >= 3:
-            record["lat"] = float(coords[0])
-            record["lon"] = float(coords[1])
-            record["time"] = int(float(coords[2]))
-        else:
-            record["lat"] = None
-            record["lon"] = None
-            record["time"] = int(row["StartYear"])
+        sdat = int(record.get("SDAT", 0))
+        record["time"] = sdat // 1000 if sdat > 0 else None
+        record["lat"] = coordinates.latitude if coordinates else None
+        record["lon"] = coordinates.longitude if coordinates else None
         records.append(record)
 
     dataframe = pd.DataFrame(records)
     if dataframe.empty:
         return dataframe
-    dataframe = dataframe.rename(columns={
-        "PDAT": "Planting",
-        "EDAT": "Emergence",
-        "ADAT": "Ant",
-        "MDAT": "Mat",
-        "CWAM": "Biom_ma",
-        "HWAM": "Yield",
-        "H#AM": "GNumber",
-        "LAIX": "MaxLai",
-        "NLCM": "Nleac",
-        "NIAM": "SoilN",
-        "CNAM": "CroN_ma",
-        "ESCP": "CumE",
-        "EPCP": "Transp",
-    })
     first = ["Model", "Idsim", "Texte"]
     rest = [column for column in dataframe.columns if column not in first]
     return dataframe[first + rest]
 
 
-def read_sequence_daily(sequence_dir, idsim):
+def read_sequence_daily(sequence_dir, idsim, simulation=None):
     output_files = {
         source: os.path.join(sequence_dir, filename)
         for source, filename in DSSAT_DAILY_FILES.items()
@@ -938,6 +1047,8 @@ def read_sequence_daily(sequence_dir, idsim):
             else daily.merge(module_data, on=["YEAR", "DOY"], how="outer")
         )
     daily = daily.sort_values(["YEAR", "DOY"]).reset_index(drop=True)
+    if simulation is not None:
+        daily = keep_rows_in_simulation_period(daily, simulation)
     daily.insert(0, "Idsim", str(idsim))
     daily.insert(0, "Model", "Dssat")
     return daily
@@ -982,61 +1093,25 @@ def read_sequence_daily_file(file_path, source):
     )
 
 
-def summary_for_master_input(dataframe):
-    """Normalize successive summary rows like the standard DSSAT converter."""
-    summary_columns = [
-        "Model", "Idsim", "Texte", "SeasonOrder", "Planting", "Emergence",
-        "Ant", "Mat", "Biom_ma", "Yield", "GNumber", "MaxLai", "Nleac",
-        "SoilN", "CroN_ma", "CumE", "Transp",
-    ]
-    result = dataframe.copy()
-    for column in summary_columns:
-        if column not in result.columns:
-            result[column] = None
-    if "ys" not in result.columns or "y0" not in result.columns:
-        raise ValueError("Successive DSSAT summary is missing season date context")
-
-    result = result.replace(-99, float("nan"))
-    for column in ("Planting", "Emergence", "Ant", "Mat"):
-        result[column] = cumulative_sequence_dates(
-            result[column], result["ys"], result["y0"]
-        )
-    for column in ("Yield", "Biom_ma"):
-        result[column] = result[column] / 1000
-    value_columns = summary_columns[4:]
-    result[value_columns] = result[value_columns].mask(result[value_columns] < 0)
-    return result[summary_columns]
-
-
-def cumulative_sequence_dates(values, season_years, sequence_start_years):
-    """Convert DSSAT dates to cumulative DOY from each run's start year."""
-    converted = []
-    for value, season_year, start_year in zip(
-        values, season_years, sequence_start_years
-    ):
-        if pd.isna(value):
-            converted.append(float("nan"))
-            continue
-        numeric_value = int(float(value))
-        if numeric_value < 0:
-            converted.append(float("nan"))
-            continue
-        doy = numeric_value % 1000
-        if doy <= 0:
-            converted.append(float("nan"))
-            continue
-        elapsed = (date(int(season_year), 1, 1) - date(int(start_year), 1, 1)).days
-        converted.append(elapsed + doy)
-    return pd.Series(converted, index=values.index, dtype="float64")
-
-
-def save_successive_outputs(mi, summaries, daily_frames, save_summary, save_daily):
+def save_successive_outputs(mi, summary, daily_frames, save_summary, save_daily):
     with sqlite3.connect(mi) as connection:
         if save_summary:
-            summary = pd.concat(summaries, ignore_index=True)
-            summary = summary_for_master_input(summary)
-            connection.execute("DELETE FROM SummaryOutput WHERE Model = 'Dssat'")
-            summary.to_sql("SummaryOutput", connection, if_exists="append", index=False)
+            output_configuration = OutputConfiguration.from_files(
+                GlobalVariables.get("outputVariablesConfig"),
+                GlobalVariables.get("outputSelectionsConfig"),
+                GlobalVariables.get("profileVariablesConfig"),
+            )
+            added_columns = output_configuration.replace_model_summary_rows(
+                connection,
+                summary,
+                "Dssat",
+                GlobalVariables.get("outputSelection", "legacy"),
+            )
+            if added_columns:
+                print(
+                    "SummaryOutput columns added: " + ", ".join(added_columns),
+                    flush=True,
+                )
             print(f"{len(summary)} rows inserted into SummaryOutput.", flush=True)
 
         if save_daily:
@@ -1121,6 +1196,8 @@ def process_successive_group(
 
     context = create_context(mi, md, directory_path, pltfolder, dt, dailyoutput, dssat_version)
     try:
+        coordinate_resolver = CoordinateResolver(context["master_input_connection"])
+        coordinate_resolver.prefetch([group[0]["idPoint"]])
         managements = successive_managements(
             group[0], context["master_input_connection"]
         )
@@ -1147,9 +1224,10 @@ def process_successive_group(
         if not os.path.exists(summary):
             print(f"Summary file {summary} not found.", flush=True)
             return pd.DataFrame(), pd.DataFrame()
-        dataframe = transform_sequence(summary, rotations)
+        coordinates = coordinate_resolver.resolve(group[0]["idPoint"])
+        dataframe = transform_sequence(summary, rotations, coordinates)
         daily = (
-            read_sequence_daily(sequence_dir, group[0]["idsim"])
+            read_sequence_daily(sequence_dir, group[0]["idsim"], group[0])
             if dailyoutput == 1
             else pd.DataFrame()
         )
@@ -1192,7 +1270,9 @@ def main():
 
     start = time()
     prepare_sqlite_indexes(mi, md)
-    rows = fetch_data_from_sqlite(mi)
+    rows = keep_simulations_with_weather(
+        fetch_data_from_sqlite(mi), mi, "Dssat", directory_path
+    )
     groups = build_successive_groups(rows)
 
     print(f"Total simulations to process: {len(rows)}", flush=True)
@@ -1200,7 +1280,6 @@ def main():
     print(f"Parallel workers: {nthreads}", flush=True)
 
     result_path = os.path.join(directory_path, f"{uuid.uuid4()}_dssat_successive.csv")
-    write_header = True
     groups_written = 0
 
     try:
@@ -1225,22 +1304,35 @@ def main():
         for dataframe, daily in results:
             if dataframe.empty:
                 continue
-            dataframe.to_csv(result_path, mode="a", header=write_header, index=False)
             summary_frames.append(dataframe)
             if not daily.empty:
                 daily_frames.append(daily)
-            write_header = False
             groups_written += 1
 
         if groups_written == 0:
             print("No data to process.", flush=True)
             return None
 
-        save_summary = dt == 0 and bool(summary_frames)
+        raw_summary = pd.concat(summary_frames, ignore_index=True)
+        output_configuration = OutputConfiguration.from_files(
+            GlobalVariables.get("outputVariablesConfig"),
+            GlobalVariables.get("outputSelectionsConfig"),
+            GlobalVariables.get("profileVariablesConfig"),
+        )
+        output_selection = GlobalVariables.get("outputSelection", "legacy")
+        canonical_summary = transform_summary_dataframe(
+            raw_summary,
+            output_configuration,
+            output_selection,
+            mode="successive",
+        )
+        canonical_summary.to_csv(result_path, index=False)
+
+        save_summary = dt == 0 and not canonical_summary.empty
         save_daily = dailyoutput == 1 and bool(daily_frames)
         if save_summary or save_daily:
             save_successive_outputs(
-                mi, summary_frames, daily_frames, save_summary, save_daily
+                mi, canonical_summary, daily_frames, save_summary, save_daily
             )
         elif dailyoutput == 1:
             print("Warning: no DSSAT successive daily results were imported.", flush=True)
