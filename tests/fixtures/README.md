@@ -80,9 +80,10 @@ This overwrites `schema.sql` and every CSV file.
 | 2026-10-04 | MasterInput `ListCultivars` | `testcult` and `testcult2` map to the CELSIUS V32 cultivars `20.1` (maize OPV_BEOU) and `2.1` (peanut ara28-206). |
 | 2026-10-04 | `tests/dssatsuccessive/celsius_model_input.db` | Initial export of the CELSIUS V32 template (24 tables, 81 cultivars), reduced as described above. |
 | 2026-10-04 | `LowInput/blindphase_corrected/ModelsDictionaryArise.db` | Initial export of the `Variables` table (3069 rows); the other tables of that database are not read by the converters. |
+| 2026-10-04 | MasterInput fertilisation scenario | Mineral policy `1` renamed `SCN_fert_min` (40 kg N/ha at sowing and +40 days) and organic policy `2` renamed `SCN_fert_org` (1000 and 500 kg manure buried 15 and 5 days before sowing); new single-maize management `FERT_MIN_ORG` using both, and simulation `5.925_6.025_2001_FERT_MIN_ORG_2` (2001, days 120 to 350). |
 
 The initial content covers: one point and one soil, years 2000 to 2002,
-4 simulations, successive seasons, two-crop association, non-zero irrigation,
-and parameter overrides by management and by soil. Every management uses
-fertilisation policy `0`, meaning no fertiliser input; non-zero mineral and
-organic policies exist in the operation tables but are not used yet.
+5 simulations, successive seasons, two-crop association, non-zero irrigation,
+mineral and organic fertilisation (`FERT_MIN_ORG`), and parameter overrides by
+management and by soil. The other managements use fertilisation policy `0`,
+meaning no fertiliser input.

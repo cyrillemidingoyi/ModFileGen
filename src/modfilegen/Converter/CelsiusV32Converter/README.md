@@ -10,6 +10,9 @@ Configuration keys in `modfilegen.GlobalVariables`:
 - `celsius_version`: `v32`;
 - `celsius_mode`: `standard` or `successive`;
 - `dbMasterInput`: source MasterInput database;
+- `dbModelsDictionary`: ModelsDictionary database used to resolve CELSIUS soil
+  defaults and soil-specific parameter overrides for any matching `Soil`
+  parameter;
 - `dbCelsiusV32Template`: valid V32 SQLite template (fallback: `dbCelsius`);
 - `celsiusV32Output`: generated database path (optional);
 - `celsiusV32Executable`: executable name/path (default: `celsiusV32`);
@@ -36,7 +39,18 @@ In successive mode, one MasterInput experiment is expanded by `SeasonOrder`.
 The first generated season has `codesuite=0`; following seasons have
 `codesuite=1`. Crops sharing a `SeasonOrder` are emitted as one association
 with `PlantOrder` mapped to `NumCrop`; CELSIUS V32 supports at most two.
+`SeasonYearOffset` determines each season year (with legacy
+`SowingYearOffset` fallback). The ordered management pattern is repeated for
+each `idsim` until the next season's first operation would fall after the
+`SimUnitList` end. The first occurrence keeps the experiment start, the last
+keeps the experiment end, and each intermediate boundary is the first
+management operation of the next occurrence; `DHarvest` does not partition a
+successive rotation.
 
 Static parameter tables such as `Cultivars`, `PlantSpecies`, `StadePheno`,
 `General_Parameters`, `Mulch`, `ListResidus`, and `CO2Yearly` must already be
 present and populated in the template.
+
+For each copied soil, `Soil.CsurNhum` is computed as
+`MasterInput.Soil.OrganicC / MasterInput.Soil.OrganicNStock`; conversion fails
+with a soil-specific error if `OrganicNStock` is zero.

@@ -1,4 +1,5 @@
 from modfilegen import GlobalVariables
+from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.coordinate_resolver import CoordinateResolver
 from modfilegen.converter import Converter
 from modfilegen.parameter_resolver import ParameterResolver
@@ -41,10 +42,12 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
 
-def create_df_summary(f, coordinates, idsim, plant_role=""):
+def create_df_summary(f, coordinates, idsim, plant_role="", preserve_raw=False):
     remove_comma(f)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
-    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
+    df = df.reset_index()
+    if not preserve_raw:
+        df = df.rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", idsim)
     df.insert(2, "Texte", plant_role)
@@ -1299,7 +1302,11 @@ def _main_standard(simulations=None):
     tppar = common_tempopar(md)
     tpv6 = common_tempoparv6(md)
 
-    data = fetch_data_from_sqlite(mi) if simulations is None else simulations
+    if simulations is None:
+        simulations = keep_simulations_with_weather(
+            fetch_data_from_sqlite(mi), mi, "Stics", directoryPath
+        )
+    data = simulations
     # Split data into chunks
     chunks = chunk_data(data, parts, chunk_size=nthreads)
     n_simulations = len(data)
@@ -1699,6 +1706,9 @@ def main():
         ]
         if not simulations:
             raise ValueError(f"STICS simulation {target_idsim!r} was not found")
+    simulations = keep_simulations_with_weather(
+        simulations, mi, "Stics", GlobalVariables.get("directorypath", os.getcwd())
+    )
 
     standard, successive = simulations, []
 

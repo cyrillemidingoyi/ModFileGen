@@ -13,6 +13,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import sqlite3
 
+from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.weather_coverage import keep_simulations_with_weather
+
 
 REQUIRED_TARGET_TABLES = {
     "Dweather", "ListPAnnexes", "ParamIni", "Tech_Commun",
@@ -110,8 +113,8 @@ def _managements(source):
         "cm.PlantOrder" if "plantorder" in crop_columns else "1"
     )
     offset_expression = (
-        "cm.SowingYearOffset" if "sowingyearoffset" in crop_columns
-        else "cm.SeasonYearOffset" if "seasonyearoffset" in crop_columns
+        "cm.SeasonYearOffset" if "seasonyearoffset" in crop_columns
+        else "cm.SowingYearOffset" if "sowingyearoffset" in crop_columns
         else "0"
     )
     rows = _rows(
@@ -135,7 +138,7 @@ def _managements(source):
         plant = _as_int(_value(row, "ResolvedPlantOrder"), 1)
         row["SeasonOrder"] = season
         row["PlantOrder"] = plant
-        row["SowingYearOffset"] = _as_int(
+        row["SeasonYearOffset"] = _as_int(
             _value(row, "ResolvedSowingYearOffset"), 0
         )
         grouped[management.lower()][season].append(row)
@@ -169,7 +172,34 @@ def _validate_plants(plants, management, season):
             )
 
 
-def _season_definitions(simulation, seasons, mode):
+def _first_operation_offset(source, plant):
+    """Return the earliest sowing-relative operation for one crop."""
+    offsets = [0]
+    sources = (
+        ("SoilTillageOperations", "SoilTillPolicyCode", "SoilTillPolicyCode", "DSTill"),
+        ("OrganicFOperations", "OFertiPolicyCode", "OFertiPolicyCode", "Dferti"),
+        ("InorganicFOperations", "InoFertiPolicyCode", "InorgFertiPolicyCode", "Dferti"),
+        ("IrrigationFOperations", "IrrigationPolicyCode", "IrrigationPolicyCode", "DIrrigation"),
+    )
+    tables = _tables(source)
+    for table, plant_policy, operation_policy, date_column in sources:
+        actual_table = tables.get(table.lower())
+        policy = _value(plant, plant_policy)
+        if actual_table is None or policy in (None, "", "0", 0):
+            continue
+        columns = {name.lower() for name in _columns(source, actual_table)}
+        if operation_policy.lower() not in columns or date_column.lower() not in columns:
+            continue
+        rows = source.execute(
+            f"SELECT [{date_column}] FROM [{actual_table}] "
+            f"WHERE lower([{operation_policy}])=lower(?)",
+            (str(policy),),
+        )
+        offsets.extend(_as_int(row[0]) for row in rows if row[0] is not None)
+    return min(offsets)
+
+
+def _season_definitions(source, simulation, seasons, mode):
     orders = sorted(seasons)
     if orders != list(range(1, len(orders) + 1)):
         raise ValueError(
@@ -188,7 +218,6 @@ def _season_definitions(simulation, seasons, mode):
     experiment_end = _julian(
         _value(simulation, "EndYear"), _value(simulation, "EndDay")
     )
-    previous_end = None
     definitions = []
     for output_order, season_order in enumerate(orders, 1):
         plants = seasons[season_order]
@@ -196,40 +225,124 @@ def _season_definitions(simulation, seasons, mode):
             plants, str(_value(simulation, "idMangt")), season_order
         )
         offsets = {
-            _as_int(_value(plant, "SowingYearOffset", "SeasonYearOffset"), 0)
+            _as_int(_value(plant, "SeasonYearOffset", "SowingYearOffset"), 0)
             for plant in plants
         }
         if len(offsets) != 1:
             raise ValueError(
-                f"Associated crops must share SowingYearOffset in season {season_order}"
+                f"Associated crops must share SeasonYearOffset in season {season_order}"
             )
-        sowing_year = _as_int(_value(simulation, "StartYear")) + offsets.pop()
+        season_year_offset = offsets.pop()
+        sowing_year = _as_int(_value(simulation, "StartYear")) + season_year_offset
         sowing_dates = [
             _julian(sowing_year, _value(plant, "sowingdate")) for plant in plants
         ]
-        harvest_dates = [
-            sowing + timedelta(days=_as_int(_value(plant, "DHarvest"), 0))
+        first_operation = min(
+            sowing + timedelta(days=_first_operation_offset(source, plant))
             for sowing, plant in zip(sowing_dates, plants)
-        ]
-        season_start = experiment_start if previous_end is None else previous_end + timedelta(days=1)
-        season_end = min(max(harvest_dates), experiment_end)
-        if min(sowing_dates) < season_start:
-            raise ValueError(
-                f"Season {season_order} is sown before its CELSIUS period starts"
-            )
-        if season_start > season_end:
-            raise ValueError(f"Empty CELSIUS period for season {season_order}")
+        )
         definitions.append(
             {
                 "output_order": output_order,
                 "season_order": season_order,
+                "season_year_offset": season_year_offset,
                 "plants": plants,
                 "sowing_dates": sowing_dates,
-                "start": season_start,
-                "end": season_end,
+                "first_operation": first_operation,
             }
         )
-        previous_end = season_end
+
+    if mode == "standard":
+        definition = definitions[0]
+        harvest_dates = [
+            sowing + timedelta(days=_as_int(_value(plant, "DHarvest"), 0))
+            for sowing, plant in zip(definition["sowing_dates"], definition["plants"])
+        ]
+        definition["start"] = experiment_start
+        definition["end"] = min(max(harvest_dates), experiment_end)
+        if definition["first_operation"] < experiment_start:
+            raise ValueError("The first CELSIUS operation precedes the simulation start")
+        if definition["start"] > definition["end"]:
+            raise ValueError("Empty CELSIUS period for season 1")
+        return definitions
+
+    templates = definitions
+    minimum_offset = min(item["season_year_offset"] for item in templates)
+    maximum_offset = max(item["season_year_offset"] for item in templates)
+    if minimum_offset < 0:
+        raise ValueError(
+            f"SeasonYearOffset cannot be negative; found {minimum_offset}"
+        )
+    pattern_years = maximum_offset - minimum_offset + 1
+    definitions = []
+    cycle_index = 0
+    reached_experiment_end = False
+    while not reached_experiment_end:
+        seasons_added = 0
+        for template in templates:
+            repeated_offset = (
+                template["season_year_offset"] + cycle_index * pattern_years
+            )
+            sowing_year = (
+                _as_int(_value(simulation, "StartYear")) + repeated_offset
+            )
+            plants = [dict(plant) for plant in template["plants"]]
+            sowing_dates = [
+                _julian(sowing_year, _value(plant, "sowingdate"))
+                for plant in plants
+            ]
+            first_operation = min(
+                sowing + timedelta(days=_first_operation_offset(source, plant))
+                for sowing, plant in zip(sowing_dates, plants)
+            )
+            if first_operation > experiment_end:
+                reached_experiment_end = True
+                break
+            definitions.append(
+                {
+                    "output_order": len(definitions) + 1,
+                    "season_order": len(definitions) + 1,
+                    "template_season_order": template["season_order"],
+                    "cycle_index": cycle_index,
+                    "season_year_offset": repeated_offset,
+                    "plants": plants,
+                    "sowing_dates": sowing_dates,
+                    "first_operation": first_operation,
+                }
+            )
+            seasons_added += 1
+        if seasons_added == 0:
+            break
+        cycle_index += 1
+
+    if not definitions:
+        return []
+
+    for index, definition in enumerate(definitions):
+        first_operation = definition["first_operation"]
+        if index == 0:
+            if first_operation < experiment_start:
+                raise ValueError(
+                    "The first CELSIUS season operation precedes the simulation start"
+                )
+            definition["start"] = experiment_start
+        else:
+            preceding = definitions[index - 1]["first_operation"]
+            if first_operation <= preceding:
+                raise ValueError(
+                    f"Season {definition['season_order']} first operation on "
+                    f"{first_operation} is not after the preceding season operation "
+                    f"on {preceding}"
+                )
+            definition["start"] = first_operation
+            definitions[index - 1]["end"] = first_operation - timedelta(days=1)
+
+    definitions[-1]["end"] = experiment_end
+    for definition in definitions:
+        if definition["start"] > definition["end"]:
+            raise ValueError(
+                f"Empty CELSIUS period for season {definition['season_order']}"
+            )
     return definitions
 
 
@@ -324,8 +437,11 @@ def _copy_initial_conditions(source, target, initial_ids):
         _insert(target, "ParamIni", values)
 
 
-def _copy_soils(source, target, soil_ids):
+def _copy_soils(source, target, soil_ids, parameter_resolver):
     defaults = _first_row(target, "Soil")
+    target_columns = {
+        name.casefold(): name for name in _columns(target, "Soil")
+    }
     target.execute("DELETE FROM Soil")
     target.execute("DELETE FROM Soil_layers")
     if not soil_ids:
@@ -349,19 +465,51 @@ def _copy_soils(source, target, soil_ids):
     for soil in soils:
         soil_id = str(_value(soil, "IdSoil"))
         layers = layers_by_soil.get(soil_id.lower(), [])
+        organic_n_stock = _as_float(_value(soil, "OrganicNStock"))
+        if organic_n_stock == 0:
+            raise ValueError(
+                f"Cannot calculate CELSIUS V32 Soil.CsurNhum for soil "
+                f"{soil_id!r}: OrganicNStock is zero"
+            )
+        soil_parameters = parameter_resolver.resolve(
+            "celsius", "Soil", soil_id
+        )
         values = dict(defaults)
+        for parameter, value in soil_parameters.items():
+            target_name = target_columns.get(parameter.casefold())
+            if (
+                target_name is not None
+                and target_name.casefold() != "idsoil"
+                and value not in (None, "")
+            ):
+                values[target_name] = value
         values.update(
             {
                 "idsoil": soil_id,
                 "NbCouches": len(layers) or 1,
                 "Zmes": _as_int(_value(soil, "SoilTotalDepth")),
                 "ZObstacleRac": _as_float(_value(soil, "SoilRDepth")),
-                "StockN": _as_float(_value(soil, "OrganicNStock")),
+                "StockN": organic_n_stock,
+                "CsurNhum": (
+                    _as_float(_value(soil, "OrganicC")) / organic_n_stock
+                ),
                 "TypeRui": _as_int(_value(soil, "RunoffType"), 1),
                 "Clay": _as_float(_value(soil, "clay")),
                 "pHeau": _as_float(_value(soil, "pH")),
             }
         )
+        for parameter, value in soil_parameters.items():
+            if not parameter_resolver.has_override(
+                "celsius", "Soil", parameter, soil_id
+            ):
+                continue
+            target_name = target_columns.get(parameter.casefold())
+            if (
+                target_name is not None
+                and target_name.casefold() != "idsoil"
+                and value not in (None, "")
+            ):
+                values[target_name] = value
         _insert(target, "Soil", values)
 
         if not layers:
@@ -575,7 +723,7 @@ def _build_simulations(source, target, simulations, managements, mode):
         seasons = managements.get(management.lower())
         if not seasons:
             raise ValueError(f"No CropManagement rows for idMangt={management!r}")
-        definitions = _season_definitions(simulation, seasons, mode)
+        definitions = _season_definitions(source, simulation, seasons, mode)
         for definition in definitions:
             champ_tri += 1
             sequence = definition["output_order"]
@@ -670,7 +818,12 @@ def create_lookup_indexes(connection):
 
 
 def convert_database(
-    master_input, celsius_database, mode="standard", simulation_ids=None
+    master_input,
+    celsius_database,
+    mode="standard",
+    simulation_ids=None,
+    report_directory=None,
+    models_dictionary=None,
 ):
     """Populate an existing CELSIUS V32 database from MasterInput.
 
@@ -683,14 +836,23 @@ def convert_database(
         raise ValueError("CELSIUS V32 mode must be 'standard' or 'successive'")
     master_input = Path(master_input)
     celsius_database = Path(celsius_database)
+    if models_dictionary is None:
+        raise ValueError("A ModelsDictionary database is required for CELSIUS V32")
+    models_dictionary = Path(models_dictionary)
     if not master_input.exists():
         raise FileNotFoundError(master_input)
     if not celsius_database.exists():
         raise FileNotFoundError(celsius_database)
+    if not models_dictionary.exists():
+        raise FileNotFoundError(models_dictionary)
 
-    with sqlite3.connect(master_input) as source, sqlite3.connect(celsius_database) as target:
+    dictionary_uri = f"{models_dictionary.resolve().as_uri()}?mode=ro"
+    with sqlite3.connect(master_input) as source, \
+            sqlite3.connect(celsius_database) as target, \
+            sqlite3.connect(dictionary_uri, uri=True) as dictionary:
         source.row_factory = sqlite3.Row
         target.row_factory = sqlite3.Row
+        dictionary.row_factory = sqlite3.Row
         _validate_target(target)
         if simulation_ids:
             simulation_ids = [str(value) for value in simulation_ids]
@@ -711,6 +873,9 @@ def convert_database(
                 )
         else:
             simulations = _rows(source, "SELECT * FROM SimUnitList ORDER BY idsim")
+        simulations = keep_simulations_with_weather(
+            simulations, source, "CelsiusV32", report_directory
+        )
         if not simulations:
             raise ValueError("No simulations selected for CELSIUS V32")
         managements = _managements(source)
@@ -718,6 +883,8 @@ def convert_database(
         soil_ids = sorted({str(_value(row, "idsoil")) for row in simulations})
         initial_ids = sorted({str(_value(row, "idIni")) for row in simulations})
         option_ids = sorted({_as_int(_value(row, "idOption"), 1) for row in simulations})
+        parameter_resolver = ParameterResolver(dictionary, source)
+        parameter_resolver.prefetch("celsius", ("Soil",), soil_ids)
 
         with target:
             generated = _build_simulations(
@@ -727,7 +894,7 @@ def convert_database(
             _copy_weather(source, target, point_ids)
             _copy_points(source, target, point_ids)
             _copy_initial_conditions(source, target, initial_ids)
-            _copy_soils(source, target, soil_ids)
+            _copy_soils(source, target, soil_ids, parameter_resolver)
             _copy_options(source, target, option_ids)
             create_lookup_indexes(target)
     return celsius_database

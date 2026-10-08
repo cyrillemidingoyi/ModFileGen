@@ -124,9 +124,14 @@ class ParameterResolver:
                   AND lower(TargetTable) IN ({self._placeholders(tables)})
                   AND lower(IdSoil) IN ({self._placeholders(batch)})
             """
-            rows = self._master_input.execute(
-                query, (model, *tables, *batch)
-            ).fetchall()
+            try:
+                rows = self._master_input.execute(
+                    query, (model, *tables, *batch)
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table: soilparameteroverrides" not in str(exc).casefold():
+                    raise
+                return
 
             for id_soil, target_table, parameter, raw_value in rows:
                 table_key = self._normalize(target_table)
