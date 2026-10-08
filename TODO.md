@@ -12,6 +12,14 @@ and linked to an issue or pull request when one exists.
 
 ## Next
 
+- [ ] Design and implement a generic strong-coupling framework for crop models:
+  define language-neutral state/action schemas and engine/policy adapters, then
+  validate the first daily closed-loop coupling with the STICS JSON-RPC server
+  (`init_simulation`, `get_variable`, `add_irrigation`, `execute_day`) and an
+  external irrigation decision model such as Optirrig/R. Keep STICS as the
+  biophysical state authority, support persistent processes and batched
+  simulations, and provide fallback adapters for models without a daily-step
+  API.
 - [ ] Integrate the common output configuration service into each converter and replace per-model hard-coded `SummaryOutput` mappings.
 - [ ] Extend dynamic DSSAT synthesis import from `Summary.OUT` to aggregated `PlantGro.OUT`, `SoilNi.OUT`, `SoilOrg.OUT`, `N2O.OUT`, and `WaterBal.OUT` fields.
 - [ ] Re-run all LowInput multi-observation cultivars with constrained AgMIP
@@ -26,6 +34,19 @@ and linked to an issue or pull request when one exists.
 
 ## Tests and maintenance
 
+- [x] Resolve CELSIUS V32 soil defaults and apply generic per-soil overrides
+  for any matching `Soil` parameter in ModelsDictionary.
+- [x] Populate CELSIUS V32 `Soil.CsurNhum` from
+  `MasterInput.Soil.OrganicC / OrganicNStock`.
+- [ ] CELSIUS V32 engine (Access VBA, then pipeline): organic fertilisation
+  still fails after the table-name fix. `FertiOrgaClass.sTypeMorga` is declared
+  `As Double` but compared with the text `"indetermine"` (InvalidCastException),
+  and `ApportsOrgaClass` looks up `ListResidus.TypeMorga`, a column the table
+  does not have (`CodeRes`). Decide how MasterInput `TypeResidues` maps to the
+  CELSIUS residue codes in the converter.
+- [ ] CELSIUS V32 integration test: mineral inputs are applied (`AppMinNj`) but
+  change nothing while `OptionsModel.ActiveNstress = 0`; add a fixture
+  simulation option with nitrogen stress enabled for the fertilised scenario.
 - [ ] DSSAT standard: a `STOP 99` in one simulation aborts its whole chunk and
   the main loop discards the chunk, including simulations that already
   succeeded; skip only the failing simulation and report it.
@@ -37,9 +58,8 @@ and linked to an issue or pull request when one exists.
   hides the schema migration scripts that `AGENTS.md` requires.
 - [ ] Add a reference MasterInput input schema to the package and a test that
   keeps `tests/fixtures/sources/masterinput/schema.sql` identical to it.
-- [ ] Add named scenarios to the text MasterInput fixture (`SCN_*` idMangt):
-  mineral and organic fertilisation using the existing non-zero policies,
-  two soils, point overrides.
+- [ ] Add more named scenarios to the text MasterInput fixture: two soils,
+  point overrides.
 - [ ] Move converter tests from the per-model fixture databases to the
   `masterinput_db` / `masterinput_copy` pytest fixtures.
 - [ ] Republish `celsiusV32` from the optimized Celsius ADODB layer and check a
@@ -69,6 +89,21 @@ and linked to an issue or pull request when one exists.
 - [ ] Add regression tests for default, computed, and explicit `q0` values.
 
 ## Completed
+
+- [x] Support layer-specific `SoilLayers.Ssat` in DSSAT with fallback to `Soil.Ssat` and then layer `Wfc`, without confusing saturation (`SSAT`) with saturated conductivity (`SSKS`).
+
+- [x] Repeat CELSIUS V32 and DSSAT successive `CropManagement` patterns independently for each `idsim` until the next occurrence falls after the `SimUnitList` end, matching STICS v11 cycle expansion.
+
+- [x] Align DSSAT 4.8 successive season boundaries with STICS v11: derive years from `SeasonYearOffset`, start each later season at its first management operation, end the preceding season one day earlier, preserve the global first and last bounds, and ignore `DHarvest` when partitioning the rotation.
+
+- [x] Align CELSIUS V32 successive season boundaries with STICS v11: derive years from `SeasonYearOffset`, use the next season's first management operation as the boundary, retain the global `SimUnitList` bounds, and ignore `DHarvest` when partitioning rotations.
+
+- [x] Align STICS v11 successive synthesis with the configurable output pipeline: generate `rap.mod` from the active selection, write canonical selected columns to CSV and `SummaryOutput`, and preserve associated crops through `(Idsim, SeasonOrder, PlantOrder)` with `P`/`A` roles.
+
+- [x] Derive STICS v11 successive season boundaries from the next season's first management operation, using `SeasonYearOffset` for its year; keep the first and last bounds from `SimUnitList` and stop using `DHarvest` to partition rotations.
+
+- [x] Add the `FERT_MIN_ORG` fertilisation scenario to the MasterInput fixture
+  (`SCN_fert_min`, `SCN_fert_org`) and check its CELSIUS V32 conversion.
 
 - [x] Drop DSSAT daily output rows outside StartYear/StartDay to
   EndYear/EndDay (standard and successive), so days DSSAT simulates after the

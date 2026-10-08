@@ -226,6 +226,7 @@ CREATE TABLE [SoilLayers] (
 [bd] DOUBLE(53),
 [Wwp] DOUBLE(53),
 [Wfc] DOUBLE(53),
+[Ssat] DOUBLE(53),
 [cf] SMALLINT(5),
 [TotalN] DOUBLE(53),
 [pH] DOUBLE(53),

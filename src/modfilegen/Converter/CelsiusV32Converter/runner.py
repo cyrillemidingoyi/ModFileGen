@@ -337,13 +337,15 @@ def run_model(celsius_database, executable="celsiusV32", workers=1):
 
 def run(mode):
     master = GlobalVariables.get("dbMasterInput")
+    models_dictionary = GlobalVariables.get("dbModelsDictionary")
     template = (
         GlobalVariables.get("dbCelsiusV32Template")
         or GlobalVariables.get("dbCelsius")
     )
-    if not master or not template:
+    if not master or not models_dictionary or not template:
         raise ValueError(
-            "dbMasterInput and dbCelsiusV32Template (or dbCelsius) must be set"
+            "dbMasterInput, dbModelsDictionary, and "
+            "dbCelsiusV32Template (or dbCelsius) must be set"
         )
 
     output = GlobalVariables.get("celsiusV32Output")
@@ -364,6 +366,7 @@ def run(mode):
         mode=mode,
         simulation_ids=simulation_ids,
         report_directory=GlobalVariables.get("directorypath") or output.parent,
+        models_dictionary=models_dictionary,
     )
     _set_daily_output(output, int(GlobalVariables.get("dailyoutput", 0)) == 1)
     if int(GlobalVariables.get("runCelsiusV32", 1)):

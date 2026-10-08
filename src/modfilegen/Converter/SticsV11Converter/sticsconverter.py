@@ -42,10 +42,12 @@ def remove_comma(f):
         print(f"Error removing comma in file {f}: {e}")
         raise
 
-def create_df_summary(f, coordinates, idsim, plant_role=""):
+def create_df_summary(f, coordinates, idsim, plant_role="", preserve_raw=False):
     remove_comma(f)
     df = pd.read_csv(f, sep=';', skipinitialspace=True)
-    df = df.reset_index().rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
+    df = df.reset_index()
+    if not preserve_raw:
+        df = df.rename(columns={"iplts": "Planting","ilevs":"Emergence","iflos":"Ant","imats":"Mat","masec(n)":"Biom_ma","mafruit":"Yield","chargefruit":'GNumber',"laimax":"MaxLai","Qles":"Nleac","QNapp":"SoilN","QNplante":"CroN_ma","ces":"CumE","cep":"Transp"})
     df.insert(0, "Model", "Stics")
     df.insert(1, "Idsim", idsim)
     df.insert(2, "Texte", plant_role)
