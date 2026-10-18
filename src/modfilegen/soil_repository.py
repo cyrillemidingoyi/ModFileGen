@@ -37,7 +37,7 @@ class SoilDataRepository:
 
             soil_cursor = self._connection.execute(
                 f"""
-                    SELECT Soil.IdSoil, Soil.SoilOption, Soil.OrganicC,
+                    SELECT Soil.*, Soil.IdSoil, Soil.SoilOption, Soil.OrganicC,
                            Soil.OrganicNStock AS OrganicNStock,
                            Soil.SoilRDepth, Soil.SoilTotalDepth,
                            Soil.SoilTextureType, Soil.Wwp, Soil.Wfc,
@@ -45,7 +45,7 @@ class SoilDataRepository:
                            RunoffTypes.RunoffCoefBSoil AS RunoffCoefBSoil,
                            Soil.Clay AS Clay, Soil.sand AS Sand
                     FROM Soil
-                    INNER JOIN RunoffTypes
+                    LEFT JOIN RunoffTypes
                         ON RunoffTypes.RunoffType = Soil.RunoffType
                     WHERE lower(Soil.IdSoil) IN ({placeholders})
                 """,
