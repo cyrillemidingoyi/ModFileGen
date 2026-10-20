@@ -1,0 +1,397 @@
+{
+  "source": "https://github.com/APSIMInitiative/ApsimX",
+  "revision": "9ca9e659bf6f10db9a17dc14072a50f9b8c36d13",
+  "revision_date": "2026-10-16T16:13:02+10:00",
+  "documentation": "https://docs.apsim.info/docs/",
+  "extracted_on": "2026-10-18",
+  "schema_columns": [
+    "model",
+    "Table",
+    "Champ",
+    "Description",
+    "unit",
+    "Type",
+    "domain",
+    "TableUsedInACMEYN",
+    "TableListYN",
+    "defaultvalueYN",
+    "status",
+    "ACMEinputEquivalentYN",
+    "ACMEinputField",
+    "FunctionACME",
+    "Default_Value_Datamill",
+    "FileNativeF",
+    "defaultValueOtherSource",
+    "SourceDV",
+    "Minnval",
+    "Maxval",
+    "commentaire",
+    "SuiviModif"
+  ],
+  "rows": 1403,
+  "table_counts": {
+    "autofertiliser": 16,
+    "autoirrigation": 31,
+    "autosowing": 11,
+    "chemical": 6,
+    "clock": 2,
+    "emergence": 1,
+    "fertiliser": 8,
+    "fertilisertype": 14,
+    "harvest": 1,
+    "initialwater": 3,
+    "irrigation": 12,
+    "leaf": 51,
+    "leafcohort": 35,
+    "microclimate": 8,
+    "nodule": 16,
+    "organ": 19,
+    "organic": 8,
+    "organicfertiliser": 18,
+    "outputs": 827,
+    "phenology": 40,
+    "photoperiod": 1,
+    "photosynthesis": 10,
+    "physical": 12,
+    "plant": 69,
+    "reproductiveorgan": 9,
+    "reset": 5,
+    "residuetype": 12,
+    "root": 35,
+    "shoot": 6,
+    "soil": 3,
+    "soilcrop": 3,
+    "soiltemperature": 3,
+    "soilwater": 18,
+    "solute": 12,
+    "sowing": 17,
+    "structure": 21,
+    "surfaceorganicmatter": 6,
+    "tillage": 9,
+    "transpiration": 12,
+    "volatilisation": 10,
+    "weather": 3
+  },
+  "status_counts": {
+    "input": 576,
+    "output": 827
+  },
+  "with_description": 1365,
+  "with_explicit_default": 46,
+  "excluded": {
+    "technical_or_outside_crop_dictionary": 8944
+  },
+  "csharp_files_read": 1177,
+  "resource_files_read": 101,
+  "management_toolbox": "ApsimNG/Resources/Toolboxes/ManagementToolbox.apsimx",
+  "management_rules": [
+    {
+      "rule": "Sow on a fixed date",
+      "category": "sowing",
+      "parameters": [
+        "Crop",
+        "CultivarName",
+        "Population",
+        "RowSpacing",
+        "SowDate",
+        "SowingDepth"
+      ]
+    },
+    {
+      "rule": "Sow using a variable rule",
+      "category": "autosowing",
+      "parameters": [
+        "Crop",
+        "CultivarName",
+        "EndDate",
+        "MinESW",
+        "MinRain",
+        "MustSow",
+        "Population",
+        "RainDays",
+        "RowSpacing",
+        "SowingDepth",
+        "StartDate"
+      ]
+    },
+    {
+      "rule": "Harvesting",
+      "category": "harvest",
+      "parameters": [
+        "Crop"
+      ]
+    },
+    {
+      "rule": "Tillage on a fixed date",
+      "category": "tillage",
+      "parameters": [
+        "Depth",
+        "Fraction",
+        "TillageDate"
+      ]
+    },
+    {
+      "rule": "Set Emergence Date",
+      "category": "emergence",
+      "parameters": [
+        "EmergenceDate"
+      ]
+    },
+    {
+      "rule": "Fertilise on fixed dates",
+      "category": "fertiliser",
+      "parameters": [
+        "Amount",
+        "AmountType",
+        "FertiliseDepth",
+        "FertiliserDates",
+        "FertiliserType"
+      ]
+    },
+    {
+      "rule": "Fertilise on fixed dates (advanced version)",
+      "category": "autofertiliser",
+      "parameters": [
+        "Amount",
+        "CritNDepth",
+        "CritNThreshold",
+        "Dates",
+        "Depth",
+        "EachYear",
+        "FertiliserType",
+        "UseCritNThreshold"
+      ]
+    },
+    {
+      "rule": "Fertilise at sowing",
+      "category": "fertiliser",
+      "parameters": [
+        "Amount",
+        "Crop",
+        "FertiliseDepth",
+        "FertiliserType"
+      ]
+    },
+    {
+      "rule": "Fertilise on Zadok stage",
+      "category": "autofertiliser",
+      "parameters": [
+        "Amount",
+        "FertiliseDepth",
+        "FertiliserType",
+        "Stage"
+      ]
+    },
+    {
+      "rule": "Fertilise topup",
+      "category": "autofertiliser",
+      "parameters": [
+        "FertiliseDepth",
+        "FertiliserType",
+        "Threshold"
+      ]
+    },
+    {
+      "rule": "Fertilise when variable reaches threshold",
+      "category": "autofertiliser",
+      "parameters": [
+        "Amount",
+        "DoOncePerSowing",
+        "FertiliseDepth",
+        "FertiliserType",
+        "NumDaysToWait",
+        "TriggerValue",
+        "VariableName"
+      ]
+    },
+    {
+      "rule": "Fertilise on event",
+      "category": "autofertiliser",
+      "parameters": [
+        "Amount",
+        "EventName",
+        "FertiliseDepth",
+        "FertiliserType",
+        "NumDaysToWait"
+      ]
+    },
+    {
+      "rule": "AddSlurryToSOM",
+      "category": "organicfertiliser",
+      "parameters": [
+        "Amount",
+        "ConcTotalN",
+        "Dates",
+        "DryMatterContent",
+        "EachYear",
+        "PercentageNH4N",
+        "PercentageNO3N"
+      ]
+    },
+    {
+      "rule": "IncorporateSlurryIntoSoil",
+      "category": "organicfertiliser",
+      "parameters": [
+        "ApplicationDates",
+        "ApplyEachYear",
+        "DryMatterProportion",
+        "NH4Content",
+        "NO3Content",
+        "SlurryAmount",
+        "SlurryNitrogenContent"
+      ]
+    },
+    {
+      "rule": "Irrigate on fixed dates",
+      "category": "irrigation",
+      "parameters": [
+        "Amount",
+        "Depth",
+        "Efficiency",
+        "IrrigateDates",
+        "WillRunoff"
+      ]
+    },
+    {
+      "rule": "AutomaticIrrigation",
+      "category": "autoirrigation",
+      "parameters": [
+        "allowIrrigation",
+        "depthPAWC",
+        "maximumAmount",
+        "returndays",
+        "seasonEnd",
+        "seasonStart",
+        "seasonsAllocation",
+        "targetDeficit",
+        "triggerDeficit"
+      ]
+    },
+    {
+      "rule": "Automatic irrigation based on water deficit",
+      "category": "autoirrigation",
+      "parameters": [
+        "AutoIrrigationOn",
+        "Crop",
+        "FASWDepth",
+        "FASWThreshold",
+        "afterSowing",
+        "weeks"
+      ]
+    },
+    {
+      "rule": "Irrigate to crop PAW at sowing",
+      "category": "irrigation",
+      "parameters": [
+        "CropSoil",
+        "SowPAW"
+      ]
+    },
+    {
+      "rule": "CentrePivot",
+      "category": "autoirrigation",
+      "parameters": [
+        "CritPAWForShallow",
+        "CritRainToPause",
+        "DaysToPauseOnCritRain",
+        "IrrigAmtDeep",
+        "IrrigAmtShallow",
+        "IrrigDeficitDeep",
+        "IrrigEffDeep",
+        "IrrigEffShallow",
+        "IrrigEnd",
+        "IrrigReturnDeep",
+        "IrrigReturnShallow",
+        "IrrigStart",
+        "PercPAWIrrigDeficitShallow",
+        "SoilDepth"
+      ]
+    },
+    {
+      "rule": "Furrow Irrigation",
+      "category": "autoirrigation",
+      "parameters": [
+        "IrrigEnd",
+        "IrrigStart",
+        "asw_depth",
+        "crit_fr_asw"
+      ]
+    },
+    {
+      "rule": "AddManure on a fixed date",
+      "category": "organicfertiliser",
+      "parameters": [
+        "Amount",
+        "MDMP",
+        "ManureDate",
+        "NConc"
+      ]
+    },
+    {
+      "rule": "Reset on sowing",
+      "category": "reset",
+      "parameters": [
+        "ResetNutrients",
+        "ResetSOM",
+        "ResetWater"
+      ]
+    },
+    {
+      "rule": "Reset on date",
+      "category": "reset",
+      "parameters": [
+        "OffsetDays",
+        "ResetDate",
+        "ResetNutrients",
+        "ResetSOM",
+        "ResetWater"
+      ]
+    }
+  ],
+  "management_variables": 148,
+  "management_issues": [],
+  "metadata_conflicts": [],
+  "disambiguated_homonyms": [
+    {
+      "Table": "root",
+      "Champ": "KNH4",
+      "reason": "different types or units; retained implementation context"
+    },
+    {
+      "Table": "root",
+      "Champ": "KNO3",
+      "reason": "different types or units; retained implementation context"
+    },
+    {
+      "Table": "outputs",
+      "Champ": "organ.Wt",
+      "reason": "different types or units; retained implementation context"
+    },
+    {
+      "Table": "outputs",
+      "Champ": "organ.N",
+      "reason": "different types or units; retained implementation context"
+    },
+    {
+      "Table": "phenology",
+      "Champ": "StartStage",
+      "reason": "different types or units; retained implementation context"
+    },
+    {
+      "Table": "organicfertiliser",
+      "Champ": "Amount",
+      "reason": "different types or units; retained implementation context"
+    }
+  ],
+  "parser_issues_outside_scope": [
+    "Models/G_Range/GRParms.cs",
+    "Models/G_Range/GRWeather.cs",
+    "Models/Grazplan/SupplementLibrary.cs",
+    "Models/Pasture/grazpastcohort.cs",
+    "Models/Pasture/typedval.cs",
+    "Models/Utilities/R.cs"
+  ],
+  "parser_issues_in_catalogue": [],
+  "duplicate_keys": [],
+  "csv_sha256": "12f46a67108340de92b7a19ae885473f727d267d7b00bb9fab760833ba863024"
+}
