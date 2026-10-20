@@ -90,6 +90,8 @@ and linked to an issue or pull request when one exists.
 
 ## Completed
 
+- [x] Derive CELSIUS V32 successive CSV `time` from each generated occurrence's sowing year instead of repeating the original `SimUnitList.StartYear`.
+
 - [x] Support layer-specific `SoilLayers.Ssat` in DSSAT with fallback to `Soil.Ssat` and then layer `Wfc`, without confusing saturation (`SSAT`) with saturated conductivity (`SSKS`).
 
 - [x] Repeat CELSIUS V32 and DSSAT successive `CropManagement` patterns independently for each `idsim` until the next occurrence falls after the `SimUnitList` end, matching STICS v11 cycle expansion.
