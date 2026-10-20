@@ -27,63 +27,175 @@ class ApsimSoilConverter(Converter):
     def __init__(self):
         super().__init__()
     
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, output_apsimx):
-        """
-        Export soil data to APSIM .apsimx format.
-        
+    PARAMETER_TABLES = ("Physical", "SoilWater", "Organic", "Chemical")
+
+    def export(self, parameter_resolver, soil_repository, output_apsimx, id_soil):
+        """Generate an APSIM soil file from MasterInput data and return its path.
+
         Args:
-            directory_path (str): Path containing Site information
-            ModelDictionary_Connection: Connection to model dictionary database
-            master_input_connection: Connection to master input database
-            output_apsimx (str): Path to output .apsimx file
-            
+            parameter_resolver (ParameterResolver): Required resolver already
+                prefetched for model apsim, PARAMETER_TABLES and id_soil.
+                Supplies model defaults and explicit soil overrides; Organic.FOMCNRatio
+                must have a configured value.
+            soil_repository (SoilDataRepository): Required repository already
+                prefetched for id_soil. Supplies Soil and SoilLayers records.
+            output_apsimx (str or os.PathLike): Destination .apsimx file path.
+                An existing soil node is replaced if the file already exists;
+                otherwise a minimal document containing the soil is created.
+                The parent directory must already exist.
+            id_soil (str): Required MasterInput Soil.IdSoil identifier,
+                supplied by the caller from the simulation row.
+
+        The caller owns prefetching and database connections. This method
+        neither queries databases nor constructs repositories or resolvers.
+
         Returns:
-            dict: The generated soil JSON structure
+            str: Path of the generated or updated APSIM .apsimx file.
+
+        Raises:
+            ValueError: Layer thickness is not positive,
+                required soil properties, saturation or C/N parameters are missing,
+                or an existing destination has no soil node to replace.
+            KeyError: The requested soil is not present in the repository.
+            RuntimeError: A supplied resolver was not prefetched as required.
+
+
+        Physical input: depths in cm, Wwp/Wfc/Ssat in percent; APSIM uses
+        mm and volumetric fractions. Layer values precede soil values.
+        Model defaults and explicit overrides use APSIM child names as
+        TargetTable (Physical, SoilWater, Organic, Chemical), in APSIM units.
         """
-        # Parse site from directory path
-        ST = directory_path.split(os.sep)
-        Site = ST[-2] if len(ST) >= 2 else ST[-1]
-        
-        # Fetch soil data from database
-        fetchSoilQuery = f"SELECT * FROM RaSoilProfile WHERE idPoint='{Site}' ORDER BY layer_number;"
-        
-        try:
-            soil_data = pd.read_sql_query(fetchSoilQuery, master_input_connection)
-        except Exception as e:
-            print(f"Error fetching soil data: {e}")
-            traceback.print_exc()
-            return None
-        
-        if soil_data.empty:
-            print(f"Warning: No soil data found for site {Site}")
-            return None
-        
-        # Build soil JSON structure
-        soil_json = self._build_soil_structure(soil_data, Site)
-        
-        try:
-            # If output_apsimx exists, update it; otherwise create new
-            if os.path.exists(output_apsimx):
-                with open(output_apsimx, 'r') as f:
-                    apsimx_data = json.load(f)
-                # Find and replace soil in the structure
-                self._update_soil_in_apsimx(apsimx_data, soil_json)
+        soil = {k.casefold(): v for k, v in
+                soil_repository.get_soil(id_soil).items()}
+        layers = soil_repository.get_layers(id_soil)
+        if not layers:
+            layers = [{"Lup": 0, "Ldown": soil["soiltotaldepth"]}]
+
+        def present(value):
+            return (value is not None and pd.notna(value)
+                    and str(value).strip().casefold() not in {"", "null", "-99", "-99.0"})
+
+        # Both concentrations describe Soil, as in STICS v11 param.sol.
+        # Do not mix a layer's OrganicC with a soil-wide nitrogen value.
+        organic_parameters = parameter_resolver.resolve("apsim", "Organic", id_soil)
+        fom_cn_ratio = organic_parameters.get('fomcnratio')
+        if not present(fom_cn_ratio):
+            raise ValueError(
+                f"Missing Organic.FOMCNRatio for soil {id_soil}: configure "
+                "the APSIM parameter in ModelsDictionary or SoilParameterOverrides")
+        soil_carbon = soil.get('organicc')
+        soil_nitrogen = soil.get('organicnstock')
+        if parameter_resolver.has_override('apsim', 'Organic', 'SoilCNRatio', id_soil):
+            soil_cn_ratio = organic_parameters.get('soilcnratio')
+        elif (present(soil_carbon) and present(soil_nitrogen)
+              and float(soil_nitrogen) > 0):
+            soil_cn_ratio = float(soil_carbon) / float(soil_nitrogen)
+        else:
+            soil_cn_ratio = organic_parameters.get('soilcnratio')
+        if not present(soil_cn_ratio) or float(soil_cn_ratio) <= 0:
+            raise ValueError(
+                f"Cannot determine SoilCNRatio for soil {id_soil}: provide "
+                "Soil.OrganicC and positive Soil.OrganicNStock or configure "
+                "Organic.SoilCNRatio")
+
+        records = []
+        physical_parameters = parameter_resolver.resolve("apsim", "Physical", id_soil)
+        for layer in layers:
+            layer = {k.casefold(): v for k, v in layer.items()}
+
+            def value(name):
+                result = layer.get(name)
+                return result if present(result) else soil.get(name)
+
+            thickness = (float(layer['ldown']) - float(layer['lup'])) * 10
+            if thickness <= 0:
+                raise ValueError(f"Non-positive layer thickness for {id_soil}")
+            bd, ll, dul = (value(k) for k in ('bd', 'wwp', 'wfc'))
+            if not all(present(v) for v in (bd, ll, dul)):
+                raise ValueError(f"Missing BD/Wwp/Wfc for soil {id_soil}")
+            sat = value('ssat')
+            if parameter_resolver.has_override('apsim', 'Physical', 'SAT', id_soil):
+                sat = physical_parameters.get('sat')
+            elif present(sat):
+                sat = float(sat) / 100
             else:
-                # Create minimal apsimx structure with soil
-                apsimx_data = self._create_minimal_apsimx(soil_json)
-            
-            # Write updated/new file
-            with open(output_apsimx, 'w') as f:
-                json.dump(apsimx_data, f, indent=2)
-            
-            print(f"Successfully created/updated APSIM soil in: {output_apsimx}")
-            return soil_json
-            
-        except Exception as e:
-            print(f"Error writing APSIM file: {e}")
-            traceback.print_exc()
-            return None
-    
+                sat = physical_parameters.get('sat')
+            if not present(sat):
+                raise ValueError(
+                    f"Missing Ssat for soil {id_soil}, layer "
+                    f"{layer.get('numlayer', 1)}: configure Physical.SAT "
+                    "or provide Soil/SoilLayers.Ssat")
+            sat = float(sat)
+            records.append(dict(thickness=thickness, bd=float(bd),
+                                ll15=float(ll)/100, dul=float(dul)/100,
+                                sat=sat, carbon=value('organicc'),
+                                ph=value('ph'),
+                                sand=value('sand') if present(value('sand')) else None,
+                                silt=value('silt') if present(value('silt')) else None,
+                                clay=value('clay') if present(value('clay')) else None,
+                                rocks=value('cf') if present(value('cf')) else None,
+                                texture=value('soiltexturetype') if present(value('soiltexturetype')) else None))
+        soil_json = self._build_soil_json(
+            site_name=str(id_soil),
+            thickness=[r['thickness'] for r in records],
+            bd=[r['bd'] for r in records],
+            airdry=[r['ll15'] * 0.5 for r in records],
+            ll15=[r['ll15'] for r in records],
+            dul=[r['dul'] for r in records],
+            sat=[r['sat'] for r in records],
+            ks=[20.0] * len(records),
+            swcon=[0.3] * len(records),
+            carbon=[r['carbon'] for r in records],
+            soil_cn_ratio=[float(soil_cn_ratio)] * len(records),
+            fom_cn_ratio=float(fom_cn_ratio),
+            ph=[r['ph'] for r in records],
+            sand=[r['sand'] for r in records],
+            silt=[r['silt'] for r in records],
+            clay=[r['clay'] for r in records],
+            rocks=[r['rocks'] for r in records],
+            texture=[r['texture'] for r in records],
+            soil_type=soil.get('soiltexturetype'),
+        )
+        for child in soil_json['Children']:
+            table = child['Name']
+            if table not in self.PARAMETER_TABLES:
+                continue
+            parameters = parameter_resolver.resolve('apsim', table, id_soil)
+            for field, original in list(child.items()):
+                key = field.casefold()
+                configured = parameters.get(key)
+                if configured is None:
+                    continue
+                # Shared measured properties win over model defaults.
+                measured = {'Thickness', 'BD', 'LL15', 'DUL', 'Carbon', 'PH', 'SAT',
+                            'ParticleSizeSand', 'ParticleSizeSilt', 'ParticleSizeClay',
+                            'Rocks', 'Texture', 'SoilCNRatio'}
+                if field in measured and not parameter_resolver.has_override(
+                        'apsim', table, field, id_soil):
+                    continue
+                if isinstance(original, list):
+                    converted = str(configured) if field == 'Texture' else float(configured)
+                    child[field] = [converted] * len(records)
+                else:
+                    child[field] = configured
+        # Keep initial water consistent with possibly overridden physical data.
+        physical = soil_json['Children'][0]
+        water = next(c for c in soil_json['Children'] if c['Name'] == 'Water')
+        water['InitialValues'] = physical['DUL'][:]
+        water['InitialPAWmm'] = sum((d-l)*t for d, l, t in zip(
+            physical['DUL'], physical['LL15'], physical['Thickness']))
+        output_apsimx = os.fspath(output_apsimx)
+        if os.path.exists(output_apsimx):
+            with open(output_apsimx) as stream:
+                document = json.load(stream)
+            if not self._update_soil_in_apsimx(document, soil_json):
+                raise ValueError(f"No soil node in {output_apsimx}")
+        else:
+            document = self._create_minimal_apsimx(soil_json)
+        with open(output_apsimx, 'w') as stream:
+            json.dump(document, stream, indent=2, allow_nan=False)
+        return output_apsimx
+
     def export_simple(self, soil_data_df, output_apsimx, site_name="Unknown", 
                      latitude=None, longitude=None, soil_type="Unknown"):
         """
@@ -92,7 +204,8 @@ class ApsimSoilConverter(Converter):
         Args:
             soil_data_df (DataFrame): DataFrame with soil layers data
                 Required columns: thickness, bd, ll15, dul, sat
-                Optional: airdry, ks, swcon, carbon, ph, no3, nh4
+                Optional: airdry, ks, swcon, carbon, soil_cn_ratio, ph,
+                sand, silt, clay, cf, soilTextureType, no3, nh4
             output_apsimx (str): Path to output .apsimx file
             site_name (str): Name of the site
             latitude (float): Site latitude
@@ -143,34 +256,11 @@ class ApsimSoilConverter(Converter):
             traceback.print_exc()
             return None
     
-    def _build_soil_structure(self, soil_data, site_name):
-        """Build APSIM soil JSON structure from database data"""
-        
-        n_layers = len(soil_data)
-        
-        # Extract arrays for each property
-        thickness = soil_data['thickness'].tolist() if 'thickness' in soil_data.columns else [150] * n_layers
-        bd = soil_data['bd'].tolist() if 'bd' in soil_data.columns else [1.0] * n_layers
-        airdry = soil_data['airdry'].tolist() if 'airdry' in soil_data.columns else [0.1] * n_layers
-        ll15 = soil_data['ll15'].tolist() if 'll15' in soil_data.columns else [0.2] * n_layers
-        dul = soil_data['dul'].tolist() if 'dul' in soil_data.columns else [0.4] * n_layers
-        sat = soil_data['sat'].tolist() if 'sat' in soil_data.columns else [0.5] * n_layers
-        ks = soil_data['ks'].tolist() if 'ks' in soil_data.columns else [20.0] * n_layers
-        
-        return self._build_soil_json(
-            site_name=site_name,
-            thickness=thickness,
-            bd=bd,
-            airdry=airdry,
-            ll15=ll15,
-            dul=dul,
-            sat=sat,
-            ks=ks,
-            soil_data=soil_data
-        )
-    
     def _build_soil_from_dataframe(self, df, site_name, latitude, longitude, soil_type):
-        """Build APSIM soil JSON structure from DataFrame"""
+        """Adapt external DataFrame columns and legacy defaults to layer lists.
+
+        This adapter is used only by export_simple, not by MasterInput export.
+        """
         
         # Required fields
         thickness = df['thickness'].tolist()
@@ -182,6 +272,14 @@ class ApsimSoilConverter(Converter):
         # Optional fields with defaults
         airdry = df['airdry'].tolist() if 'airdry' in df.columns else [ll * 0.5 for ll in ll15]
         ks = df['ks'].tolist() if 'ks' in df.columns else [20.0] * len(thickness)
+        swcon = df['swcon'].tolist() if 'swcon' in df.columns else [0.3] * len(thickness)
+        if 'carbon' in df.columns:
+            carbon = df['carbon'].tolist()
+        elif 'oc' in df.columns:
+            carbon = df['oc'].tolist()
+        else:
+            carbon = [1.2 * (0.8 ** i) for i in range(len(thickness))]
+        ph = df['ph'].tolist() if 'ph' in df.columns else [8.0] * len(thickness)
         
         return self._build_soil_json(
             site_name=site_name,
@@ -195,39 +293,34 @@ class ApsimSoilConverter(Converter):
             latitude=latitude,
             longitude=longitude,
             soil_type=soil_type,
-            soil_data=df
+            swcon=swcon,
+            carbon=carbon,
+            soil_cn_ratio=(df['soil_cn_ratio'].tolist() if 'soil_cn_ratio' in df.columns
+                           else [12.0] * len(thickness)),
+            fom_cn_ratio=40.0,
+            ph=ph,
+            sand=df['sand'].tolist() if 'sand' in df.columns else None,
+            silt=df['silt'].tolist() if 'silt' in df.columns else None,
+            clay=df['clay'].tolist() if 'clay' in df.columns else None,
+            rocks=df['cf'].tolist() if 'cf' in df.columns else None,
+            texture=df['soilTextureType'].tolist() if 'soilTextureType' in df.columns else None,
         )
     
     def _build_soil_json(self, site_name, thickness, bd, airdry, ll15, dul, sat, ks,
-                        latitude=None, longitude=None, soil_type=None, soil_data=None):
-        """Build the complete APSIM soil JSON structure"""
-        
+                        *, swcon, carbon, ph, soil_cn_ratio, fom_cn_ratio,
+                        latitude=None, longitude=None, soil_type=None,
+                        sand=None, silt=None, clay=None, rocks=None, texture=None):
+        """Build APSIM nodes from explicit layer lists, without reading columns.
+
+        carbon and ph contain the already prepared values for each layer;
+        swcon contains the water-balance drainage coefficients; soil_cn_ratio
+        contains the prepared carbon-to-nitrogen ratios. fom_cn_ratio is the
+        scalar C/N ratio of the fresh organic matter.
+        sand, silt and clay contain particle-size percentages, if available.
+        rocks contains cf percentages and texture contains SoilTextureType labels.
+        """
         n_layers = len(thickness)
-        
-        # Extract optional properties from soil_data if available
-        swcon = None
-        carbon = None
-        ph = None
-        
-        if soil_data is not None:
-            if 'swcon' in soil_data.columns:
-                swcon = soil_data['swcon'].tolist()
-            if 'carbon' in soil_data.columns:
-                carbon = soil_data['carbon'].tolist()
-            elif 'oc' in soil_data.columns:
-                carbon = soil_data['oc'].tolist()
-            if 'ph' in soil_data.columns:
-                ph = soil_data['ph'].tolist()
-        
-        # Set defaults if not provided
-        if swcon is None:
-            swcon = [0.3] * n_layers
-        if carbon is None:
-            # Default carbon profile (decreasing with depth)
-            carbon = [1.2 * (0.8 ** i) for i in range(n_layers)]
-        if ph is None:
-            ph = [8.0] * n_layers
-        
+
         # Calculate FOM (Fresh Organic Matter) - exponential decay with depth
         cumulative_depth = 0
         fom = []
@@ -262,11 +355,11 @@ class ApsimSoilConverter(Converter):
                 {
                     "$type": "Models.Soils.Physical, Models",
                     "Thickness": thickness,
-                    "ParticleSizeSand": None,
-                    "ParticleSizeSilt": None,
-                    "ParticleSizeClay": None,
-                    "Rocks": None,
-                    "Texture": None,
+                    "ParticleSizeSand": sand,
+                    "ParticleSizeSilt": silt,
+                    "ParticleSizeClay": clay,
+                    "Rocks": rocks,
+                    "Texture": texture,
                     "BD": bd,
                     "AirDry": airdry,
                     "LL15": ll15,
@@ -318,11 +411,11 @@ class ApsimSoilConverter(Converter):
                 },
                 {
                     "$type": "Models.Soils.Organic, Models",
-                    "FOMCNRatio": 40.0,
+                    "FOMCNRatio": fom_cn_ratio,
                     "Thickness": thickness,
                     "Carbon": carbon,
                     "CarbonUnits": 0,
-                    "SoilCNRatio": [12.0] * n_layers,
+                    "SoilCNRatio": soil_cn_ratio,
                     "FBiom": [0.04 * (0.5 ** i) for i in range(n_layers)],
                     "FInert": [min(0.4 + 0.15 * i, 1.0) for i in range(n_layers)],
                     "FOM": fom,
