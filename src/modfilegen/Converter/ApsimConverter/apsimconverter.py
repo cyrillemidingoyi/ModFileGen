@@ -14,6 +14,8 @@ Date: 2024-2026
 from modfilegen import GlobalVariables
 from modfilegen.weather_coverage import keep_simulations_with_weather
 from modfilegen.converter import Converter
+from modfilegen.soil_repository import SoilDataRepository
+from modfilegen.parameter_resolver import ParameterResolver
 from . import apsimweatherconverter, apsimsoilconverter, apsimmanagementconverter, apsiminitconverter
 import sys
 import subprocess
@@ -166,6 +168,12 @@ def process_chunk(*args):
     ModelDictionary_Connection = sqlite3.connect(md)
     MasterInput_Connection = sqlite3.connect(mi)
     
+    soil_repository = SoilDataRepository(MasterInput_Connection)
+    soil_ids = {row["idsoil"] for row in chunk}
+    soil_repository.prefetch(soil_ids)
+    parameter_resolver = ParameterResolver(ModelDictionary_Connection, MasterInput_Connection)
+    parameter_resolver.prefetch("apsim", apsimsoilconverter.ApsimSoilConverter.PARAMETER_TABLES, soil_ids)
+
     for i, row in enumerate(chunk):
         # Periodically clear caches to free memory
         if i > 0 and i % CACHE_CLEAR_INTERVAL == 0:
@@ -217,15 +225,15 @@ def process_chunk(*args):
                 weather_file = None
             
             # 2. SOIL CONVERSION
-            soilid = f"{row['idsoil']}.{row['idMangt']}"
+            soilid = str(row["idsoil"]).strip().casefold()
             if soilid not in soiltable:
                 print(f"  → Converting soil profile for {soilid}", flush=True)
                 soilconverter = apsimsoilconverter.ApsimSoilConverter()
                 soil_file = soilconverter.export(
-                    simPath,
-                    ModelDictionary_Connection,
-                    MasterInput_Connection,
-                    usmdir
+                    parameter_resolver=parameter_resolver,
+                    soil_repository=soil_repository,
+                    output_apsimx=os.path.join(usmdir, "Soil.apsimx"),
+                    id_soil=row["idsoil"],
                 )
                 soiltable[soilid] = soil_file
                 del soilconverter
@@ -233,7 +241,10 @@ def process_chunk(*args):
                 print(f"  → Reusing cached soil data for {soilid}", flush=True)
                 soil_file = soiltable[soilid]
                 if soil_file and os.path.exists(soil_file):
-                    shutil.copy(soil_file, usmdir)
+                    destination = os.path.join(usmdir, "Soil.apsimx")
+                    if os.path.abspath(soil_file) != os.path.abspath(destination):
+                        shutil.copyfile(soil_file, destination)
+                    soil_file = destination
             
             # 3. MANAGEMENT CONVERSION
             print(f"  → Converting management operations", flush=True)
@@ -344,6 +355,17 @@ def process_chunk(*args):
     return result
 
 
+def find_soil_component(node):
+    """Find soil in standalone exports or nested simulation/zone documents."""
+    if node.get('$type') == 'Models.Soils.Soil, Models':
+        return node
+    for child in node.get('Children', []):
+        result = find_soil_component(child)
+        if result is not None:
+            return result
+    return None
+
+
 def update_apsim_template(sim_file, row, weather_file, soil_file, management_file, init_file=None):
     """
     Update an existing APSIM template with simulation-specific parameters.
@@ -404,12 +426,7 @@ def update_apsim_template(sim_file, row, weather_file, soil_file, management_fil
                     soil_data = json.load(f)
                 
                 # Extract soil component
-                soil_component = None
-                if 'Children' in soil_data:
-                    for child in soil_data['Children']:
-                        if child.get('$type') == 'Models.Soils.Soil, Models':
-                            soil_component = child
-                            break
+                soil_component = find_soil_component(soil_data)
                 
                 if soil_component:
                     # Find and replace soil in template
@@ -595,11 +612,9 @@ def create_apsim_simulation(usmdir, row, weather_file, soil_file, management_fil
             with open(soil_file, 'r') as f:
                 soil_data = json.load(f)
             # Extract soil from file and add to simulation
-            if 'Children' in soil_data:
-                for child in soil_data['Children']:
-                    if child.get('$type') == 'Models.Soils.Soil, Models':
-                        simulation['Children'][0]['Children'].append(child)
-                        break
+            soil_component = find_soil_component(soil_data)
+            if soil_component is not None:
+                simulation['Children'][0]['Children'].append(soil_component)
         except Exception as e:
             print(f"Warning: Could not load soil file: {e}")
     

@@ -509,3 +509,120 @@ python test_management_with_real_db.py
 - APSIM Next Generation: https://www.apsim.info/
 - APSIM Documentation: https://www.apsim.info/documentation/
 - ModFileGen: https://github.com/your-org/ModFileGen
+
+
+## MasterInput soil mapping
+
+Like STICS v11 soil export, `ApsimSoilConverter.export()` requires the
+preloaded `parameter_resolver`, `soil_repository`, destination `output_apsimx`
+and known `id_soil`. The orchestrator creates and prefetches both services
+once per batch, then supplies them to the converter. The converter reads
+cached `Soil` and `SoilLayers` records and resolved parameters; it does not
+accept database connections, create services, or execute SQL queries.
+
+```python
+soil_file = soilconverter.export(
+    parameter_resolver=parameter_resolver,
+    soil_repository=soil_repository,
+    output_apsimx=os.path.join(usmdir, "Soil.apsimx"),
+    id_soil=row["idsoil"],
+)
+```
+
+Before calling export, the caller must have run
+`soil_repository.prefetch(soil_ids)` and
+`parameter_resolver.prefetch("apsim", ApsimSoilConverter.PARAMETER_TABLES, soil_ids)`
+with the requested soil identifier included in `soil_ids`.
+
+Layers are ordered by `NumLayer`. Without layers, a single layer uses
+`SoilTotalDepth`. Missing layer properties fall back to `Soil` (NULL, empty
+strings and -99 count as missing).
+
+| MasterInput | APSIM | Conversion |
+|---|---|---|
+| `Ldown - Lup` | Physical.Thickness | cm × 10 → mm |
+| `bd` | Physical.BD | unchanged |
+| `Wwp` | Physical.LL15 | percent / 100 |
+| `Wfc` | Physical.DUL | percent / 100 |
+| `Ssat` | Physical.SAT | percent / 100 |
+| `OrganicC` | Organic.Carbon | percent, unchanged |
+| `Soil.OrganicC / Soil.OrganicNStock` | Organic.SoilCNRatio | same input units; dimensionless ratio |
+| `pH` | Chemical.PH | unchanged |
+| `sand` | Physical.ParticleSizeSand | percent, unchanged |
+| `silt` | Physical.ParticleSizeSilt | percent, unchanged |
+| `clay` | Physical.ParticleSizeClay | percent, unchanged |
+| `cf` | Physical.Rocks | percent, unchanged |
+| `SoilTextureType` | Physical.Texture | text, unchanged |
+
+For particle-size properties, Rocks and Texture, a layer value takes priority. If its column
+is absent from `SoilLayers`, or the value is NULL, empty or -99, the converter
+uses the corresponding `Soil` value. This supports a future `SoilLayers.Sand`
+column without requiring it in existing databases. No particle fraction is
+calculated from the other two; a missing value in both sources stays null.
+Texture labels are repeated from `Soil.SoilTextureType` when the layer
+column is absent. No texture class is calculated from particle fractions.
+`export_simple()` also accepts optional `sand`, `silt`, `clay`, `cf` and
+`soilTextureType` columns.
+The regression test adds `Sand` only to its private temporary database copy;
+versioned fixture schemas and sources are unchanged.
+
+The soil C/N ratio is calculated from `Soil.OrganicC / Soil.OrganicNStock`,
+as in STICS v11. The two inputs have the same units (confirmed for MasterInput).
+This soil-level ratio is repeated across layers; layer-specific carbon is
+not divided by soil-level nitrogen. `SoilLayers.TotalN` is not used as an
+alias for organic nitrogen. Explicit `Organic.SoilCNRatio` overrides take
+priority over the calculated ratio. If calculation is impossible (including
+missing or nonpositive OrganicNStock), a configured ratio is required;
+otherwise export raises ValueError. No fixed C/N ratio is used in MasterInput
+export. The external DataFrame API accepts optional `soil_cn_ratio` and
+retains its existing 12.0 default when that column is absent.
+
+When saturation is missing, a configured Physical.SAT default is required;
+otherwise export raises a ValueError identifying the soil and layer.
+No saturation is estimated from bulk density. KS is a separate conductivity,
+never inferred from Ssat; its legacy fallback remains 20 mm/day.
+
+MasterInput soil export requires `FOMCNRatio` through `ParameterResolver`:
+configure a `Variables` definition with model `apsim`, table `Organic`,
+field `FOMCNRatio` and numeric type. The resolved value comes from the model
+default or a `SoilParameterOverrides` row for that soil (same model, target
+`Organic`, parameter `FOMCNRatio`). If neither supplies a value, export raises
+an explicit error; it does not fall back to 40.0 or reuse SoilCNRatio.
+The DataFrame-only `export_simple()` retains its legacy FOMCNRatio of 40.0;
+the separate initialization converter also still needs alignment with this
+resolver contract.
+
+`ParameterResolver` reads model `apsim`, with TargetTable `Physical`,
+`SoilWater`, `Organic`, or `Chemical`, and parameter names matching the JSON
+properties, e.g. `KS` or `SWCON`. Values use APSIM units. Measured properties
+precede model defaults; explicit `SoilParameterOverrides` take priority.
+Scalar array parameters are repeated across layers.
+
+`export()` accepts an output **file** path and returns that path;
+`export_simple()` retains its existing DataFrame API and dictionary return.
+MasterInput export passes per-layer `OrganicC` and `pH` values directly as
+`carbon` and `ph` lists to `_build_soil_json()`, along with the other prepared
+layer lists. No intermediate DataFrame is used on that path. The JSON builder
+only assembles nodes; it does not inspect column names or choose defaults.
+The DataFrame adapter `_build_soil_from_dataframe()` is used only by
+`export_simple()`: optional columns, the existing `oc` alias for `carbon`,
+and its legacy defaults are handled there.
+The orchestrator preloads soils and parameters per batch and writes a local
+`Soil.apsimx` for each simulation, including cache hits. Existing fixture
+sources and databases were not migrated by this change.
+
+
+## APSIM NG reference variable catalogue
+
+The [APSIM NG variable catalogue](../../../../docs/catalogues/apsimng/README.md)
+provides a separate CSV with all 22 ModelsDictionary.Variables columns,
+functional input categories (organic, chemical, physical, soilwater, etc.)
+and shared output variables from a pinned official APSIM NG revision.
+Technical API types, methods and per-crop resource paths are excluded;
+native class names appear only in provenance. The catalogue also covers
+residue/tillage parameters and public parameters/variables of selected official
+management rules, including automatic sowing, irrigation and fertilisation.
+Toolbox sample settings are retained only as contextual examples. Existing legacy Apsim dictionary rows are not reused.
+The catalogue records definitions, units, explicit defaults and provenance;
+it has not been imported into any database. See its README for coverage,
+classification rules and extraction limitations.
