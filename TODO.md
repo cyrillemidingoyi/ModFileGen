@@ -34,6 +34,19 @@ and linked to an issue or pull request when one exists.
 
 ## Tests and maintenance
 
+- [ ] Audit remaining APSIM catalogue inputs with public setters against
+  runtime assignments, especially state properties in structure and volatilisation.
+
+- [ ] Validate the shared APSIM NG catalogue categories and parameter coverage
+  (including official management-rule parameters) against a reference .apsimx,
+  then select converter-supported rows before importing into ModelsDictionary.
+
+- [ ] Align APSIM initialization organic FOMCNRatio with the soil export's
+  ParameterResolver value instead of its separate hard-coded 40.0 fallback.
+
+- [ ] Validate APSIM generated soil profiles with the APSIM executable,
+  using measured `Ssat` or explicitly configured `Physical.SAT`.
+
 - [x] Resolve CELSIUS V32 soil defaults and apply generic per-soil overrides
   for any matching `Soil` parameter in ModelsDictionary.
 - [x] Populate CELSIUS V32 `Soil.CsurNhum` from
@@ -90,7 +103,63 @@ and linked to an issue or pull request when one exists.
 
 ## Completed
 
-- [x] Derive CELSIUS V32 successive CSV `time` from each generated occurrence's sowing year instead of repeating the original `SimUnitList.StartYear`.
+- [x] Clarify APSIM tillage cn_rain as the cumulative rainfall threshold (mm)
+  cancelling the tillage-induced Curve Number reduction, documenting its
+  linear decay and PotentialRunoff accumulation with upstream code evidence.
+
+- [x] Correct APSIM FinalLeafNo and dynamic volatilisation pH as outputs,
+  remove their false input rows, and preserve runtime-assignment evidence
+  in the generator and regenerated catalogue; retain chemical.PH as input.
+
+- [x] Extend the APSIM NG dictionary with residue types, tillage and public
+  parameters/variables from 23 official management rules, including automatic
+  sowing, irrigation and fertilisation; exclude methods and keep toolbox
+  sample settings separate from generic defaults.
+
+- [x] Replace the APSIM NG API inventory with functional input categories
+  and shared outputs, remove technical types and crop-specific resource rows,
+  and disambiguate incompatible homonyms without inventing generic defaults.
+
+- [x] Build a separate APSIM NG Variables CSV from pinned official C# metadata
+  and JSON resources, preserving the 22-column dictionary schema, explicit
+  defaults and provenance without reusing legacy APSIM rows or changing a DB.
+
+- [x] Require APSIM soil export FOMCNRatio from ParameterResolver
+  (Organic defaults and per-soil overrides), with explicit missing-parameter
+  failure and no fixed fallback in the MasterInput soil export.
+
+- [x] Derive APSIM Organic.SoilCNRatio from Soil.OrganicC / OrganicNStock
+  (same units), preserve explicit overrides, and require configured values
+  when the soil ratio cannot be calculated.
+
+- [x] Map APSIM Physical.Rocks to cf and Physical.Texture to SoilTextureType,
+  with layer-to-soil fallback and string-safe explicit texture overrides.
+
+- [x] Populate APSIM ParticleSizeSand/Silt/Clay from layer sand/silt/clay,
+  falling back to Soil when the layer column or value is missing, including
+  compatibility with databases without SoilLayers.Sand.
+
+- [x] Simplify APSIM soil JSON construction with explicit layer lists:
+  pass MasterInput OrganicC/pH directly and keep optional DataFrame column
+  handling in export_simple's adapter; remove the unused database builder.
+
+- [x] Align APSIM soil export with STICS v11: require preloaded
+  `ParameterResolver` and `SoilDataRepository`, remove database arguments and
+  internal service creation, and verify export executes no SQL queries.
+
+- [x] Require the known `id_soil` in APSIM soil export and remove redundant
+  simulation lookup and path-based identifier extraction.
+
+- [x] Clarify the APSIM soil export docstring, including arguments,
+  prefetch requirements, returned file path and main errors.
+
+- [x] Remove the APSIM porosity-based saturation estimate; fail explicitly
+  when neither MasterInput `Ssat` nor configured `Physical.SAT` is available.
+
+- [x] Read APSIM soils from MasterInput `Soil` / `SoilLayers` by simulation
+  `idsoil`, convert depths and water percentages, resolve model defaults and
+  soil overrides, and fix soil-file generation, embedding and batch reuse;
+  cover the mapping with shared text-fixture regression tests.
 
 - [x] Support layer-specific `SoilLayers.Ssat` in DSSAT with fallback to `Soil.Ssat` and then layer `Wfc`, without confusing saturation (`SSAT`) with saturated conductivity (`SSKS`).
 
