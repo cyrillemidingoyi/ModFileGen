@@ -305,8 +305,10 @@ then the fallback of missing layer values.
      - 0–1
      - Bare soil albedo, or the texture estimate (``albedoStrategy``).
    * - ``RunoffType``
-     - code
-     - Runoff behaviour of the bare soil (``RunoffTypes``).
+     - text code
+     - Runoff behaviour of the bare soil (``RunoffTypes``). Codes are
+       compared as text; a number stored by an older database (``2`` or
+       ``2.0``) matches ``'2'``.
    * - ``DrainFAO``
      - 1–7
      - Optional FAO drainage class (1 very poorly to 7 excessively drained).
@@ -394,7 +396,9 @@ RunoffTypes
    * - ``CurveNumber``
      - USDA curve number, used by DSSAT (``SLRO``).
    * - ``CodRunoffCelsius``
-     - CELSIUS runoff code. Not read: CELSIUS V32 uses ``Soil.RunoffType``.
+     - CELSIUS V32 runoff code (``Soil.TypeRui``, a row of the CELSIUS
+       ``TypeSurfSol`` table), for example ``2`` (moderate runoff) gives
+       ``6``. Without this column, ``Soil.RunoffType`` is written as is.
    * - ``param1``
      - Reserved.
 
