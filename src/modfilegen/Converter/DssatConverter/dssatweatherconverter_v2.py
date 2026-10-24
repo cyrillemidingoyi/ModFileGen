@@ -10,6 +10,23 @@ def is_leap_year(year):
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
+def coordinate_value(coordinate_row, name, default):
+    """Return ``Coordinates.<name>`` when present and filled, else ``default``.
+
+    Column names are matched without case. NULL, NaN and empty values fall
+    back to the ModelsDictionary default.
+    """
+    for key, value in coordinate_row.items():
+        if str(key).lower() != name.lower():
+            continue
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return default
+        if pd.isna(value):
+            return default
+        return value
+    return default
+
+
 def format_dssat_weather_date(year, doy):
     """Format a DSSAT weather date as YYDDD."""
     year = int(year)
@@ -105,7 +122,7 @@ class DssatweatherConverter(Converter):
             if 'dewp' in row and row['dewp']:
                 content += f"{row['dewp']:6.1f}"
             elif ('Tdewmin' in row and row['Tdewmin']) and ('Tdewmax' in row and row['Tdewmax']):
-                content += f"{(float(row['Tdewmin']) + float(row['Tdewmax']) / 2.0):6.1f}"
+                content += f"{(float(row['Tdewmin']) + float(row['Tdewmax'])) / 2.0:6.1f}"
             else:
                 content += ' ' * 6
             content += f"{row['wind'] * 86.4:6.0f}" if 'wind' in row and row['wind'] is not None else ' ' * 6
@@ -168,6 +185,8 @@ class DssatweatherConverter(Converter):
             if not coordinates:
                 raise ValueError(f"No coordinates found for idPoint={site}")
             site_row = coordinates[0]
+            tav = coordinate_value(site_row, "tav", tav)
+            amp = coordinate_value(site_row, "amp", amp)
 
             years = normalize_export_years(start_year, years=years)
 

@@ -1,4 +1,6 @@
+from modfilegen import GlobalVariables
 from modfilegen.converter import Converter
+from modfilegen.soil_repository import soil_albedo
 from sqlite3 import Connection
 import os
 import pandas as pd
@@ -29,7 +31,8 @@ class SticsParamSolConverter(Converter):
                 "     1  ","Sol", f"{row['Clay']:.1f}", f"{row['OrganicNStock']:.4f}",
                 f"{float(defaults['profhum']):.4f}", f"{float(defaults['calc']):.4f}",
                 f"{row['pH']:.4f}", f"{float(defaults['concseuil']):.4f}",
-                f"{row['albedo']:.4f}", f"{float(defaults['q0']):.4f}",
+                f"{soil_albedo(row, GlobalVariables.get('albedoStrategy', 'measured')):.4f}",
+                f"{float(defaults['q0']):.4f}",
                 f"{row['RunoffCoefBSoil']:.4f}", f"{row['SoilRDepth']:.4f}",
                 f"{float(defaults['pluiebat']):.4f}", f"{float(defaults['mulchbat']):.4f}",
                 f"{float(defaults['zesx']):.4f}", f"{float(defaults['cfes']):.4f}",

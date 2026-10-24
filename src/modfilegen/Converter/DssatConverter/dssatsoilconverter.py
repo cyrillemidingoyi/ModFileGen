@@ -1,6 +1,4 @@
 from modfilegen.converter import Converter
-from sqlite3 import Connection
-import os
 import pandas as pd
 import traceback
 
@@ -14,234 +12,170 @@ def resolve_ssat(soil_ssat, soil_wfc, layer_ssat=None):
     return float(soil_wfc) * 1.01 / 100
 
 
+# ModelsDictionary tables (model 'dssat') holding the soil defaults. The
+# table tells the nature of a parameter: every dssat_soil_data parameter may
+# take one value per layer, dssat_soil_site parameters only NumLayer = 0.
+SITE_TABLE = "dssat_soil_site"
+LAYER_TABLE = "dssat_soil_data"
+PARAMETER_TABLES = (SITE_TABLE, LAYER_TABLE)
+_MISSING_CODE = format(-99, "6.0f")
+# DSSAT SLDR (fraction/day) for each FAO drainage class (Soil.DrainFAO).
+FAO_DRAINAGE_SLDR = {1: 0.01, 2: 0.05, 3: 0.25, 4: 0.40, 5: 0.60, 6: 0.75, 7: 0.85}
+# source: https://repositorio.upf.br/server/api/core/bitstreams/63c040a1-2aef-434f-b6b8-144abadbd120/content
+
+def _number(value):
+    """SQLite NULL is written as nan, as when soils were read with pandas."""
+    return float("nan") if pd.isna(value) else value
+
+
+def drainage_rate(site, soil, has_override):
+    """SLDR: explicit override, else the FAO drainage class, else the default."""
+    drain_fao = soil.get("drainfao")
+    if has_override or pd.isna(drain_fao):
+        return float(site["sldr"])
+    try:
+        return FAO_DRAINAGE_SLDR[int(drain_fao)]
+    except (KeyError, ValueError):
+        raise ValueError(f"Soil.DrainFAO must be a class from 1 to 7, not {drain_fao!r}")
+
+
+def _code(value, name):
+    """Format an optional chemical code; -99 means not measured."""
+    if float(value) == -99:
+        return _MISSING_CODE
+    return v_fmt[name].format(float(value))
+
+
 class DssatSoilConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, ModelDictionary_Connection, master_input_connection, usmdir):
-        fileContent = ""
-        ST = directory_path.split(os.sep) 
-        idSoil = ST[-4]       
-        Mngt = ST[-1][:4]
-        T = "Select  Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] like 'dssat_soil_%'));"
-        DT = pd.read_sql_query(T,ModelDictionary_Connection) 
+    def export(
+        self, parameter_resolver, soil_repository, usmdir, id_soil, id_mangt,
+        coordinates,
+    ):
+        """Write ``XX.SOL`` for one soil and return its content.
 
-        fetchAllQuery = """SELECT DISTINCT Coordinates.*, RunoffTypes.CurveNumber, Soil.albedo
-        From Coordinates INNER Join ((RunoffTypes INNER Join Soil On RunoffTypes.RunoffType = Soil.RunoffType)
-        INNER Join SimUnitList On Soil.IdSoil = SimUnitList.idsoil) ON Coordinates.idPoint = SimUnitList.idPoint 
-        where SimUnitList.IdSim='%s';"""%(ST[-5])
+        ``parameter_resolver`` must be prefetched for model ``dssat``,
+        ``PARAMETER_TABLES`` and ``id_soil``; ``soil_repository`` for
+        ``id_soil``. ``coordinates`` (latitude, longitude) are those of the
+        simulation point; ``id_mangt`` gives the site code. Measured soil and
+        layer properties are written unless an explicit override applies to
+        the layer; model parameters come from ModelsDictionary defaults and
+        ``SoilParameterOverrides`` (``NumLayer = 0`` for the whole profile,
+        1..n for one layer).
+        """
+        soil = {key.casefold(): value for key, value in soil_repository.get_soil(id_soil).items()}
+        layers = [
+            {key.casefold(): value for key, value in layer.items()}
+            for layer in soil_repository.get_layers(id_soil)
+        ]
+        simple = soil["soiloption"] == "simple"
+        if not simple and not layers:
+            raise ValueError(f"Detailed soil {id_soil!r} has no SoilLayers rows")
+        if pd.isna(soil.get("curvenumber")):
+            raise ValueError(f"Soil {id_soil!r} has no RunoffTypes.CurveNumber")
+        # A 'simple' soil is one layer, written as two DSSAT lines.
+        layer_count = 1 if simple else len(layers)
+        site = parameter_resolver.resolve("dssat", SITE_TABLE, id_soil)
+        # No site parameter is a layer parameter: reject NumLayer > 0 there.
+        parameter_resolver.resolve_layers("dssat", SITE_TABLE, id_soil, layer_count, ())
+        layer_values = parameter_resolver.resolve_layers(
+            "dssat", LAYER_TABLE, id_soil, layer_count)
 
-        DA = pd.read_sql_query(fetchAllQuery, master_input_connection)
-        rows = DA.to_dict(orient='records')
-        
-        for row in rows:
-            rw = DT[DT["Champ"] == "filename"]
-            Dv = rw["dv"].values[0]
-            fileName = "XX.SOL"
-            fileContent += f"*SOILS: DSSAT Soil Input File\n"
-            fileContent += f"*XX{Mngt}0101\n"
-            fileContent += f"@SITE        COUNTRY          LAT     LONG SCS FAMILY\n"
-            fileContent += v_fmt["SITE"].format(f"XX{Mngt}0101")
-            rw = DT[DT["Champ"] == "country"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["COUNTRY"].format(Dv)
-            fileContent += v_fmt["LAT"].format(row['latitudeDD'])
-            fileContent += v_fmt["LONG"].format(row['longitudeDD'])
-            rw = DT[DT["Champ"] == "scs family"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SCS FAMILY"].format(Dv)+ "\n"
-            fileContent += "@ SCOM  SALB  SLU1  SLDR  SLRO  SLNF  SLPF  SMHB  SMPX  SMKE\n"
-            rw = DT[DT["Champ"] == "scom"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SCOM"].format(Dv)
-            fileContent += v_fmt["SALB"].format(row["albedo"])
-            rw = DT[DT["Champ"] == "slu1"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SLU1"].format(float(Dv))
-            rw = DT[DT["Champ"] == "sldr"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SLDR"].format(float(Dv))
-            fileContent += v_fmt["SLRO"].format(row["CurveNumber"])
-            rw = DT[DT["Champ"] == "slnf"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SLNF"].format(float(Dv))
-            rw = DT[DT["Champ"] == "slpf"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SLPF"].format(float(Dv))
-            rw = DT[DT["Champ"] == "smhb"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SMHB"].format(Dv)
-            rw = DT[DT["Champ"] == "smpx"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SMPX"].format(Dv)
-            rw = DT[DT["Champ"] == "smke"]
-            Dv = rw["dv"].values[0]
-            fileContent += v_fmt["SMKE"].format(Dv)+ "\n"
-            fileContent += "@  SLB  SLMH  SLLL  SDUL  SSAT  SRGF  SSKS  SBDM  SLOC  SLCL  SLSI  SLCF  SLNI  SLHW  SLHB  SCEC  SADC" +"\n"
-            
-            soil_columns = {
-                item[1].lower()
-                for item in master_input_connection.execute("PRAGMA table_info(Soil)")
-            }
-            soil_layer_columns = {
-                item[1].lower()
-                for item in master_input_connection.execute("PRAGMA table_info(SoilLayers)")
-            }
-            ssat_expression = "Soil.Ssat" if "ssat" in soil_columns else "NULL"
-            layer_ssat_expression = (
-                "SoilLayers.Ssat" if "ssat" in soil_layer_columns else "NULL"
-            )
-            layer_ssks_expression = (
-                "SoilLayers.Ssks" if "ssks" in soil_layer_columns else "NULL"
-            )
-            fetchAllQuery1 = """Select Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd AS 'Soil.bd', Soil.OrganicC AS 'Soil.OrganicC', 
-                                        Soil.Cf AS 'Soil.Cf', Soil.pH AS 'Soil.pH', Soil.extp AS 'Soil.extp', Soil.totp AS 'Soil.totp', 
-                                        Soil.sand AS 'Soil.sand', Soil.clay AS 'Soil.clay', Soil.silt AS 'Soil.silt',
-                                        Soil.SoilOption AS 'SoilOption', Soil.OrganicNStock AS 'OrganicNStock', 
-                                        Soil.SoilTotalDepth AS 'SoilTotalDepth', 
-                                        SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', 
-                                        SoilLayers.bd AS 'SoilLayers.bd', SoilLayers.OrganicC AS 'SoilLayers.OrganicC', 
-                                        SoilLayers.Clay AS 'SoilLayers.Clay', SoilLayers.Silt AS 'SoilLayers.Silt', 
-                                        SoilLayers.Cf AS 'SoilLayers.Cf', SoilLayers.pH AS 'SoilLayers.pH',
-                                        {ssat_expression} AS 'Soil.Ssat',
-                                        {layer_ssat_expression} AS 'SoilLayers.Ssat',
-                                        {layer_ssks_expression} AS 'SoilLayers.Ssks',
-                                        SoilLayers.Ldown AS 'Ldown', SoilLayers.TotalN AS 'TotalN' FROM SOIL LEFT JOIN SoilLayers On Lower(Soil.IdSoil) = lower(SoilLayers.idsoil) where Lower(Soil.idSoil) = '%s' ;"""%(idSoil.lower())
-            fetchAllQuery1 = fetchAllQuery1.format(
-                ssat_expression=ssat_expression,
-                layer_ssat_expression=layer_ssat_expression,
-                layer_ssks_expression=layer_ssks_expression,
-            )
-            DA1 = pd.read_sql_query(fetchAllQuery1, master_input_connection)
-            rows1 = DA1.to_dict(orient='records')
-            if rows1[0]["SoilOption"] == "simple":
-                for i in range(0, 2):
-                    if i == 0:
-                        fileContent += v_fmt["SLB"].format(30)
-                    else:
-                        fileContent += v_fmt["SLB"].format(rows1[0]["SoilTotalDepth"])
-                    rw = DT[DT["Champ"] == "slmh"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SLMH"].format(Dv)
-                    fileContent += v_fmt["SLLL"].format(rows1[0]["Soil.Wwp"] / 100)
-                    fileContent += v_fmt["SDUL"].format(rows1[0]["Soil.Wfc"] / 100)
-                    fileContent += v_fmt["SSAT"].format(
-                        resolve_ssat(rows1[0]["Soil.Ssat"], rows1[0]["Soil.Wfc"])
-                    )
-                    rw = DT[DT["Champ"] == "srgf"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SRGF"].format(float(Dv))
-                    rw = DT[DT["Champ"] == "ssks"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SSKS"].format(float(Dv))
-                    fileContent += v_fmt["SBDM"].format(rows1[0]["Soil.bd"])
-                    if i == 0:
-                        fileContent += v_fmt["SLOC"].format(rows1[0]["Soil.OrganicC"])
-                    else:
-                        fileContent += v_fmt["SLOC"].format(0)
-                    fileContent += v_fmt["SLCL"].format(rows1[0]["Soil.clay"])
-                    fileContent += v_fmt["SLSI"].format(rows1[0]["Soil.silt"])
-                    fileContent += v_fmt["SLCF"].format(rows1[0]["Soil.Cf"])
-                    if i == 0:
-                        fileContent += v_fmt["SLNI"].format(rows1[0]["OrganicNStock"])
-                    else:
-                        fileContent += v_fmt["SLNI"].format(0)
-                    fileContent += v_fmt["SLHW"].format(rows1[0]["Soil.pH"])
-                    rw = DT[DT["Champ"] == "slhb"]
-                    Dv = rw["dv"].values[0]
-                    if int(Dv) == -99:
-                        fileContent += format(-99, "6.0f")
-                    else: fileContent += v_fmt["SLHB"].format(float(Dv))
-                    rw = DT[DT["Champ"] == "scec"]
-                    Dv = rw["dv"].values[0]
-                    if int(Dv) == -99:
-                        fileContent += format(-99, "6.0f")
-                    else: fileContent += v_fmt["SCEC"].format(float(Dv))
-                    rw = DT[DT["Champ"] == "sadc"]
-                    Dv = rw["dv"].values[0]
-                    if int(Dv) == -99:
-                        fileContent += format(-99, "6.0f")+ "\n"
-                    else: fileContent += v_fmt["SADC"].format(float(Dv))+ "\n"
-            else:
-                for row1 in rows1:
-                    fileContent += v_fmt["SLB"].format(row1["Ldown"])
-                    rw = DT[DT["Champ"] == "slmh"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SLMH"].format(Dv)
-                    fileContent += v_fmt["SLLL"].format(row1["SoilLayers.Wwp"] / 100)
-                    fileContent += v_fmt["SDUL"].format(row1["SoilLayers.Wfc"] / 100)
-                    fileContent += v_fmt["SSAT"].format(
-                        resolve_ssat(
-                            row1["Soil.Ssat"], row1["SoilLayers.Wfc"],
-                            row1["SoilLayers.Ssat"],
-                        )
-                    )
-                    rw = DT[DT["Champ"] == "srgf"]
-                    Dv = rw["dv"].values[0]
-                    fileContent += v_fmt["SRGF"].format(float(Dv))
-                    measured_ssks = row1["SoilLayers.Ssks"]
-                    if pd.notna(measured_ssks):
-                        fileContent += v_fmt["SSKS"].format(measured_ssks)
-                    else:
-                        rw = DT[DT["Champ"] == "ssks"]
-                        Dv = rw["dv"].values[0]
-                        fileContent += v_fmt["SSKS"].format(float(Dv))
-                    fileContent += v_fmt["SBDM"].format(row1["SoilLayers.bd"])
-                    fileContent += v_fmt["SLOC"].format(row1["SoilLayers.OrganicC"])
-                    fileContent += v_fmt["SLCL"].format(row1["SoilLayers.Clay"])
-                    fileContent += v_fmt["SLSI"].format(row1["SoilLayers.Silt"])
-                    fileContent += v_fmt["SLCF"].format(row1["SoilLayers.Cf"])
-                    fileContent += v_fmt["SLNI"].format(row1["TotalN"])
-                    fileContent += v_fmt["SLHW"].format(row1["SoilLayers.pH"])
-                    rw = DT[DT["Champ"] == "slhb"]
-                    Dv = rw["dv"].values[0]
-                    if int(Dv) == -99:
-                        fileContent += format(-99, "6.0f")
-                    else: fileContent += v_fmt["SLHB"].format(float(Dv))
-                    rw = DT[DT["Champ"] == "scec"]
-                    Dv = rw["dv"].values[0]
-                    if int(Dv) == -99:
-                        fileContent += format(-99, "6.0f")
-                    else: fileContent += v_fmt["SCEC"].format(float(Dv))
-                    rw = DT[DT["Champ"] == "sadc"]
-                    Dv = rw["dv"].values[0]
-                    if int(Dv) == -99:
-                        fileContent += format(-99, "6.0f") + '\n'
-                    else: fileContent += v_fmt["SADC"].format(float(Dv))+ "\n"
-            
-            fileContent += "@  SLB  SLPX  SLPT  SLPO CACO3  SLAL  SLFE  SLMN  SLBS  SLPA  SLPB  SLKE  SLMG  SLNA  SLSU  SLEC  SLCA" +"\n"
-            if rows1[0]["SoilOption"] == "simple":
-                for i in range(0, 2):
-                    if i == 0:
-                        fileContent += v_fmt["SLB"].format(30)
-                    else:
-                        fileContent += v_fmt["SLB"].format(rows1[0]["SoilTotalDepth"])
-                    fileContent += v_fmt["SLPX"].format(rows1[0]["Soil.extp"])  
-                    fileContent += v_fmt["SLPT"].format(rows1[0]["Soil.totp"]) 
-                    fileContent += format(-99, "6.0f") # v_fmt["SLPO"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["CACO3"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLAL"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLFE"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLMN"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLBS"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLPA"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLPB"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLKE"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLMG"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLNA"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLSU"].format(-99)
-                    fileContent += format(-99, "6.0f") # v_fmt["SLEC"].format(-99)
-                    fileContent += format(-99, "6.0f") + "\n" # v_fmt["SLCA"].format(-99)+ "\n"         
-            fileContent += "\n"    
+        def measured(name, value, number):
+            """Measured value, unless an explicit override applies to the layer."""
+            if parameter_resolver.has_override("dssat", LAYER_TABLE, name, id_soil, layer=number):
+                return float(layer_values[number - 1][name])
+            return value
 
+        def layer_line(depth, number, values, wwp, wfc, ssat, ssks, bd, carbon,
+                       clay, silt, cf, nitrogen, ph):
+            return "".join([
+                v_fmt["SLB"].format(depth),
+                v_fmt["SLMH"].format(values["slmh"]),
+                v_fmt["SLLL"].format(float(measured("slll", _number(wwp) / 100, number))),
+                v_fmt["SDUL"].format(float(measured("sdul", _number(wfc) / 100, number))),
+                v_fmt["SSAT"].format(float(measured("ssat", ssat, number))),
+                v_fmt["SRGF"].format(float(values["srgf"])),
+                v_fmt["SSKS"].format(float(
+                    values["ssks"] if pd.isna(ssks) else measured("ssks", ssks, number))),
+                v_fmt["SBDM"].format(_number(measured("sbdm", bd, number))),
+                v_fmt["SLOC"].format(_number(measured("sloc", carbon, number))),
+                v_fmt["SLCL"].format(_number(measured("slcl", clay, number))),
+                v_fmt["SLSI"].format(_number(measured("slsi", silt, number))),
+                v_fmt["SLCF"].format(_number(measured("slcf", cf, number))),
+                v_fmt["SLNI"].format(_number(measured("slni", nitrogen, number))),
+                v_fmt["SLHW"].format(_number(measured("slhw", ph, number))),
+                _code(values["slhb"], "SLHB"),
+                _code(values["scec"], "SCEC"),
+                _code(values["sadc"], "SADC"),
+                "\n",
+            ])
 
+        site_code = f"XX{str(id_mangt)[:4]}0101"
+        lines = [
+            "*SOILS: DSSAT Soil Input File\n",
+            f"*{site_code}\n",
+            "@SITE        COUNTRY          LAT     LONG SCS FAMILY\n",
+            v_fmt["SITE"].format(site_code)
+            + v_fmt["COUNTRY"].format(site["country"])
+            + v_fmt["LAT"].format(_number(coordinates.latitude))
+            + v_fmt["LONG"].format(_number(coordinates.longitude))
+            + v_fmt["SCS FAMILY"].format(site["scs family"]) + "\n",
+            "@ SCOM  SALB  SLU1  SLDR  SLRO  SLNF  SLPF  SMHB  SMPX  SMKE\n",
+            v_fmt["SCOM"].format(site["scom"])
+            + v_fmt["SALB"].format(_number(soil["albedo"]))
+            + v_fmt["SLU1"].format(float(site["slu1"]))
+            + v_fmt["SLDR"].format(drainage_rate(
+                site, soil,
+                parameter_resolver.has_override("dssat", SITE_TABLE, "sldr", id_soil)))
+            + v_fmt["SLRO"].format(soil["curvenumber"])
+            + v_fmt["SLNF"].format(float(site["slnf"]))
+            + v_fmt["SLPF"].format(float(site["slpf"]))
+            + v_fmt["SMHB"].format(site["smhb"])
+            + v_fmt["SMPX"].format(site["smpx"])
+            + v_fmt["SMKE"].format(site["smke"]) + "\n",
+            "@  SLB  SLMH  SLLL  SDUL  SSAT  SRGF  SSKS  SBDM  SLOC  SLCL  SLSI  SLCF  SLNI  SLHW  SLHB  SCEC  SADC\n",
+        ]
+        if simple:
+            ssat = resolve_ssat(soil.get("ssat"), soil["wfc"])
+            for top in (True, False):
+                lines.append(layer_line(
+                    30 if top else soil["soiltotaldepth"], 1, layer_values[0],
+                    soil["wwp"], soil["wfc"], ssat, soil.get("ssks"), soil["bd"],
+                    soil["organicc"] if top else 0, soil["clay"], soil.get("silt"),
+                    soil["cf"], soil["organicnstock"] if top else 0, soil["ph"],
+                ))
+        else:
+            for number, layer in enumerate(layers, start=1):
+                lines.append(layer_line(
+                    layer["ldown"], number, layer_values[number - 1],
+                    layer["wwp"], layer["wfc"],
+                    resolve_ssat(soil.get("ssat"), _number(layer["wfc"]), layer.get("ssat")),
+                    # Measured conductivity: layer, else soil.
+                    layer.get("ssks") if pd.notna(layer.get("ssks")) else soil.get("ssks"),
+                    layer["bd"], layer["organicc"],
+                    layer.get("clay"), layer.get("silt"), layer.get("cf"),
+                    layer.get("totaln"), layer.get("ph"),
+                ))
+        lines.append("@  SLB  SLPX  SLPT  SLPO CACO3  SLAL  SLFE  SLMN  SLBS  SLPA  SLPB  SLKE  SLMG  SLNA  SLSU  SLEC  SLCA\n")
+        if simple:
+            for top in (True, False):
+                lines.append(
+                    v_fmt["SLB"].format(30 if top else soil["soiltotaldepth"])
+                    + v_fmt["SLPX"].format(_number(soil.get("extp")))
+                    + v_fmt["SLPT"].format(_number(soil.get("totp")))
+                    + _MISSING_CODE * 14 + "\n"
+                )
+        lines.append("\n")
+        content = "".join(lines)
         try:
-            self.write_file(usmdir, fileName, fileContent) 
+            self.write_file(usmdir, "XX.SOL", content)
         except Exception as e:
             traceback.print_exc()
             print(f"Error during writing file : {e}")
-        return fileContent
-            
+        return content
 
 
 v_fmt = {

@@ -129,13 +129,13 @@ variables:
         status: verified
       celsius:
         source: OutputSynt
-        field: JulPheno1_4
+        field: JulPheno1_3
         source_unit: simulation_day
         transform: identity
         status: verified
       celsiusv32:
         source: OutputSynt
-        field: JulPheno1_4
+        field: JulPheno1_3
         source_unit: simulation_day
         transform: identity
         status: verified

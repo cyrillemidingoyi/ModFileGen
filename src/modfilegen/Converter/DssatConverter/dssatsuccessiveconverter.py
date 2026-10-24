@@ -32,6 +32,8 @@ from modfilegen.weather_coverage import (
     keep_simulations_with_weather,
 )
 from modfilegen.coordinate_resolver import CoordinateResolver
+from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.soil_repository import SoilDataRepository
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import transform_summary_dataframe
 from . import dssatcultivarconverter, dssatsoilconverter, dssatxconverter
@@ -174,17 +176,6 @@ def simulation_path(directory_path, row):
     return os.path.join(
         directory_path,
         str(row["idsim"]),
-        str(row["idPoint"]),
-        str(row["StartYear"]),
-        str(row["idMangt"]),
-    )
-
-
-def soil_simulation_path(directory_path, row):
-    return os.path.join(
-        directory_path,
-        str(row["idsim"]),
-        str(row["idsoil"]),
         str(row["idPoint"]),
         str(row["StartYear"]),
         str(row["idMangt"]),
@@ -833,12 +824,7 @@ def generate_rotation_input(
         context["dssat_version"],
     )
 
-    dssatsoilconverter.DssatSoilConverter().export(
-        soil_simulation_path(context["directory_path"], season_row),
-        context["model_dictionary_connection"],
-        connection,
-        sequence_dir,
-    )
+    write_soil_file(context, season_row, sequence_dir)
 
     dssatxconverter.DssatXConverter().export(
         x_simulation_path(context["directory_path"], season_row),
@@ -909,6 +895,45 @@ def create_context(mi, md, directory_path, pltfolder, dt, dailyoutput, dssat_ver
         "master_input_connection": sqlite3.connect(mi),
         "model_dictionary_connection": sqlite3.connect(md),
     }
+
+
+def prefetch_soil_services(context, rows, coordinate_resolver):
+    """Read soils, their DSSAT parameters and coordinates once for ``rows``."""
+    soil_ids = {row["idsoil"] for row in rows}
+    connection = context["master_input_connection"]
+    context["soil_repository"] = SoilDataRepository(connection)
+    context["soil_repository"].prefetch(soil_ids)
+    context["parameter_resolver"] = ParameterResolver(
+        context["model_dictionary_connection"], connection
+    )
+    context["parameter_resolver"].prefetch(
+        "dssat", dssatsoilconverter.PARAMETER_TABLES, soil_ids
+    )
+    coordinate_resolver.prefetch({row["idPoint"] for row in rows})
+    context["coordinate_resolver"] = coordinate_resolver
+    context["soil_files"] = {}
+
+
+def write_soil_file(context, row, usmdir):
+    """Write XX.SOL for ``row``; the content is built once per soil, point and site."""
+    key = (
+        str(row["idsoil"]).strip().casefold(),
+        str(row["idPoint"]).strip().casefold(),
+        str(row["idMangt"])[:4],
+    )
+    if key not in context["soil_files"]:
+        context["soil_files"][key] = dssatsoilconverter.DssatSoilConverter().export(
+            context["parameter_resolver"],
+            context["soil_repository"],
+            usmdir,
+            row["idsoil"],
+            row["idMangt"],
+            context["coordinate_resolver"].resolve(row["idPoint"]),
+        )
+    else:
+        dssatsoilconverter.DssatSoilConverter().write_file(
+            usmdir, "XX.SOL", context["soil_files"][key]
+        )
 
 
 def close_context(context):
@@ -1157,12 +1182,7 @@ def process_single_row(row, context, directory_path, sequence_dir):
         context["master_input_connection"],
         sequence_dir,
     )
-    dssatsoilconverter.DssatSoilConverter().export(
-        soil_simulation_path(directory_path, row),
-        context["model_dictionary_connection"],
-        context["master_input_connection"],
-        sequence_dir,
-    )
+    write_soil_file(context, row, sequence_dir)
     dssatxconverter.DssatXConverter().export(
         x_simulation_path(directory_path, row),
         context["model_dictionary_connection"],
@@ -1197,7 +1217,7 @@ def process_successive_group(
     context = create_context(mi, md, directory_path, pltfolder, dt, dailyoutput, dssat_version)
     try:
         coordinate_resolver = CoordinateResolver(context["master_input_connection"])
-        coordinate_resolver.prefetch([group[0]["idPoint"]])
+        prefetch_soil_services(context, group, coordinate_resolver)
         managements = successive_managements(
             group[0], context["master_input_connection"]
         )
