@@ -1,7 +1,7 @@
 ModFileGen
 ==========
 
-.. image:: https://readthedocs.org/projects/modfilegen/badge/?version=latest
+.. image:: https://app.readthedocs.org/projects/modfilegen/badge/?version=latest
    :target: https://modfilegen.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
 
