@@ -32,11 +32,12 @@ class DssatCultivarConverter(Converter):
 
     def export(self, directory_path, master_input_connection, pltfolder, usmdir, dssat_version="v47"):
         ST = directory_path.split(os.sep)   
-        sq = """SELECT CropManagement.idMangt as idMangt, ListCultOption.PRCROP as crop, ListCultOption.DSCROP as dscrop 
+        sq = """SELECT CropManagement.idMangt as idMangt, ListCultOption.CG as crop, ListCultOption.DSCROP as dscrop 
         FROM (ListCultOption INNER JOIN (ListCultivars INNER JOIN CropManagement ON ListCultivars.IdCultivar = CropManagement.Idcultivar) ON ListCultOption.CodePSpecies = ListCultivars.CodePSpecies) where idMangt= '%s' ;"""%(ST[-1])   
         df_sim = pd.read_sql(sq, master_input_connection)
         rows = df_sim.to_dict('records')
 
+        # DSSAT crop model = current crop code (CG) + model (DSCROP), e.g. MZCER047.
         cultivar_code = rows[0]["crop"] + cultivar_code_for_version(
             rows[0]["dscrop"], dssat_version
         )
