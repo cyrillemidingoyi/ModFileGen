@@ -580,7 +580,10 @@ retains its existing 12.0 default when that column is absent.
 When saturation is missing, a configured Physical.SAT default is required;
 otherwise export raises a ValueError identifying the soil and layer.
 No saturation is estimated from bulk density. KS is a separate conductivity,
-never inferred from Ssat; its legacy fallback remains 20 mm/day.
+never inferred from Ssat. It comes from the measured `SoilLayers.Ssks`, else
+`Soil.Ssks` (cm/h, converted to mm/day: 1 cm/h = 240 mm/day); without a
+measure, from the `Physical.KS` default, else the legacy 20 mm/day. An explicit
+override of the layer or of the profile wins over the measure.
 
 MasterInput soil export requires `FOMCNRatio` through `ParameterResolver`:
 configure a `Variables` definition with model `apsim`, table `Organic`,
@@ -596,7 +599,15 @@ resolver contract.
 `SoilWater`, `Organic`, or `Chemical`, and parameter names matching the JSON
 properties, e.g. `KS` or `SWCON`. Values use APSIM units. Measured properties
 precede model defaults; explicit `SoilParameterOverrides` take priority.
-Scalar array parameters are repeated across layers.
+
+Array properties hold one value per APSIM layer, numbered from 1 in
+`SoilLayers` order (a soil without `SoilLayers` rows has layer 1 only). For
+layer k, `ParameterResolver.resolve_layers()` uses the override with
+`NumLayer = k`, else the whole-profile override (`NumLayer = 0`), else the
+model default. A measured property is replaced only on the layers an explicit
+override applies to. Scalar properties, such as `FOMCNRatio`, accept
+`NumLayer = 0` only; an override on another layer, or on a layer the soil does
+not have, raises a `ValueError`.
 
 `export()` accepts an output **file** path and returns that path;
 `export_simple()` retains its existing DataFrame API and dictionary return.

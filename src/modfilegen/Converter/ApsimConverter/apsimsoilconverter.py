@@ -99,8 +99,10 @@ class ApsimSoilConverter(Converter):
                 "Organic.SoilCNRatio")
 
         records = []
-        physical_parameters = parameter_resolver.resolve("apsim", "Physical", id_soil)
-        for layer in layers:
+        # One APSIM layer per SoilLayers row (or one for a soil without rows).
+        physical_layers = parameter_resolver.resolve_layers(
+            "apsim", "Physical", id_soil, len(layers))
+        for number, layer in enumerate(layers, start=1):
             layer = {k.casefold(): v for k, v in layer.items()}
 
             def value(name):
@@ -114,19 +116,23 @@ class ApsimSoilConverter(Converter):
             if not all(present(v) for v in (bd, ll, dul)):
                 raise ValueError(f"Missing BD/Wwp/Wfc for soil {id_soil}")
             sat = value('ssat')
-            if parameter_resolver.has_override('apsim', 'Physical', 'SAT', id_soil):
-                sat = physical_parameters.get('sat')
+            if parameter_resolver.has_override(
+                    'apsim', 'Physical', 'SAT', id_soil, layer=number):
+                sat = physical_layers[number - 1].get('sat')
             elif present(sat):
                 sat = float(sat) / 100
             else:
-                sat = physical_parameters.get('sat')
+                sat = physical_layers[number - 1].get('sat')
             if not present(sat):
                 raise ValueError(
                     f"Missing Ssat for soil {id_soil}, layer "
                     f"{layer.get('numlayer', 1)}: configure Physical.SAT "
                     "or provide Soil/SoilLayers.Ssat")
             sat = float(sat)
-            records.append(dict(thickness=thickness, bd=float(bd),
+            # Measured Ssks is in cm/h (DSSAT unit); APSIM KS is in mm/day.
+            ssks = value('ssks')
+            records.append(dict(ks=float(ssks) * 240 if present(ssks) else None,
+                                thickness=thickness, bd=float(bd),
                                 ll15=float(ll)/100, dul=float(dul)/100,
                                 sat=sat, carbon=value('organicc'),
                                 ph=value('ph'),
@@ -143,7 +149,7 @@ class ApsimSoilConverter(Converter):
             ll15=[r['ll15'] for r in records],
             dul=[r['dul'] for r in records],
             sat=[r['sat'] for r in records],
-            ks=[20.0] * len(records),
+            ks=[20.0 if r['ks'] is None else r['ks'] for r in records],
             swcon=[0.3] * len(records),
             carbon=[r['carbon'] for r in records],
             soil_cn_ratio=[float(soil_cn_ratio)] * len(records),
@@ -156,28 +162,45 @@ class ApsimSoilConverter(Converter):
             texture=[r['texture'] for r in records],
             soil_type=soil.get('soiltexturetype'),
         )
+        # Shared measured properties win over model defaults; only an explicit
+        # override (of the layer or of the whole profile) replaces them.
+        measured = {'Thickness', 'BD', 'LL15', 'DUL', 'Carbon', 'PH', 'SAT',
+                    'ParticleSizeSand', 'ParticleSizeSilt', 'ParticleSizeClay',
+                    'Rocks', 'Texture', 'SoilCNRatio'}
         for child in soil_json['Children']:
             table = child['Name']
             if table not in self.PARAMETER_TABLES:
                 continue
             parameters = parameter_resolver.resolve('apsim', table, id_soil)
+            # List fields hold one value per layer; the others are whole-soil.
+            per_layer = parameter_resolver.resolve_layers(
+                'apsim', table, id_soil, len(records),
+                [field for field, original in child.items() if isinstance(original, list)])
             for field, original in list(child.items()):
                 key = field.casefold()
+                if isinstance(original, list):
+                    configured = [values[key] for values in per_layer]
+                    if all(value is None for value in configured):
+                        continue
+                    layered = []
+                    for number, value in enumerate(configured, start=1):
+                        current = original[number - 1] if number <= len(original) else None
+                        is_measured = field in measured or (
+                            field == 'KS' and records[number - 1]['ks'] is not None)
+                        if value is None or (is_measured and not parameter_resolver.has_override(
+                                'apsim', table, field, id_soil, layer=number)):
+                            layered.append(current)
+                        else:
+                            layered.append(str(value) if field == 'Texture' else float(value))
+                    child[field] = layered
+                    continue
                 configured = parameters.get(key)
                 if configured is None:
                     continue
-                # Shared measured properties win over model defaults.
-                measured = {'Thickness', 'BD', 'LL15', 'DUL', 'Carbon', 'PH', 'SAT',
-                            'ParticleSizeSand', 'ParticleSizeSilt', 'ParticleSizeClay',
-                            'Rocks', 'Texture', 'SoilCNRatio'}
                 if field in measured and not parameter_resolver.has_override(
                         'apsim', table, field, id_soil):
                     continue
-                if isinstance(original, list):
-                    converted = str(configured) if field == 'Texture' else float(configured)
-                    child[field] = [converted] * len(records)
-                else:
-                    child[field] = configured
+                child[field] = configured
         # Keep initial water consistent with possibly overridden physical data.
         physical = soil_json['Children'][0]
         water = next(c for c in soil_json['Children'] if c['Name'] == 'Water')

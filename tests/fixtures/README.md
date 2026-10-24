@@ -81,6 +81,11 @@ This overwrites `schema.sql` and every CSV file.
 | 2026-10-04 | `tests/dssatsuccessive/celsius_model_input.db` | Initial export of the CELSIUS V32 template (24 tables, 81 cultivars), reduced as described above. |
 | 2026-10-04 | `LowInput/blindphase_corrected/ModelsDictionaryArise.db` | Initial export of the `Variables` table (3069 rows); the other tables of that database are not read by the converters. |
 | 2026-10-04 | MasterInput fertilisation scenario | Mineral policy `1` renamed `SCN_fert_min` (40 kg N/ha at sowing and +40 days) and organic policy `2` renamed `SCN_fert_org` (1000 and 500 kg manure buried 15 and 5 days before sowing); new single-maize management `FERT_MIN_ORG` using both, and simulation `5.925_6.025_2001_FERT_MIN_ORG_2` (2001, days 120 to 350). |
+| 2026-10-23 | `migrations/20261023_add_coordinates_tav_amp.sql` | Optional `Coordinates.tav` and `Coordinates.amp` (degC), NULL in the fixture so the DSSAT weather converters use the ModelsDictionary defaults. |
+| 2026-10-23 | `migrations/20261023_soil_parameter_overrides_numlayer.sql` | `SoilParameterOverrides.NumLayer` (0 = whole profile, 1..n = layer) added to the primary key; the existing `finert` override gets 0. |
+| 2026-10-24 | MasterInput `SoilLayers` | `Ssat` empty strings replaced by NULL, the value the Ssat migration defines for an unknown layer saturation (an empty string made DSSAT fail on detailed soils). |
+| 2026-10-24 | `migrations/20261024_add_soil_ssks.sql` | `Soil.Ssks` and `SoilLayers.Ssks` (cm/h), NULL in the fixture. |
+| 2026-10-24 | `migrations/20261024_add_soil_drainfao.sql` | `Soil.DrainFAO` (FAO drainage class 1 to 7), NULL in the fixture. |
 
 The initial content covers: one point and one soil, years 2000 to 2002,
 5 simulations, successive seasons, two-crop association, non-zero irrigation,

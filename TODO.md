@@ -12,6 +12,11 @@ and linked to an issue or pull request when one exists.
 
 ## Next
 
+- [ ] CELSIUS V32 soils only call `ParameterResolver.resolve()`, so a layer
+  override (`NumLayer` > 0) on its `Soil` table is silently ignored; reject it
+  with `resolve_layers("celsius", "Soil", soil_id, layer_count, ())`.
+- [ ] DSSAT successive builds its soil services once per group (one simulation);
+  share them across the groups of a worker batch, as STICS v11 successive does.
 - [ ] Design and implement a generic strong-coupling framework for crop models:
   define language-neutral state/action schemas and engine/policy adapters, then
   validate the first daily closed-loop coupling with the STICS JSON-RPC server
@@ -34,6 +39,8 @@ and linked to an issue or pull request when one exists.
 
 ## Tests and maintenance
 
+- [ ] APSIM weather (`apsimweatherconverter.py`) still reads `tav` and `amp`
+  only from ModelsDictionary; use `Coordinates.tav`/`amp` first, as DSSAT does.
 - [ ] Audit remaining APSIM catalogue inputs with public setters against
   runtime assignments, especially state properties in structure and volatilisation.
 
@@ -102,6 +109,55 @@ and linked to an issue or pull request when one exists.
 - [ ] Add regression tests for default, computed, and explicit `q0` values.
 
 ## Completed
+
+- [x] Document the configuration in `docs/source/configuration.rst`: global
+  options with values and defaults, `albedoStrategy` and `sticsv11Q0Strategy`,
+  soil parameter priority rules (overrides, `NumLayer`, measured properties,
+  `Ssat`, `Ssks`, `DrainFAO`, `tav`/`amp`) and weather coverage.
+
+- [x] Global option `albedoStrategy` (`"measured"` by default, or
+  `"texture"`): with `"texture"`, the soil albedo is re-estimated from
+  `Soil.SoilTextureType` (`TEXTURE_ALBEDO`, else 0.30) in `SoilDataRepository`,
+  so every converter reading soils through it uses the same albedo; STICS v9
+  `param.sol`, which still queries `Soil` directly, applies the same rule.
+
+- [x] `Soil.DrainFAO` (FAO drainage class 1 to 7,
+  `migrations/20261024_add_soil_drainfao.sql`); DSSAT SLDR uses the `sldr`
+  override, else the FAO class (0.01, 0.05, 0.25, 0.40, 0.60, 0.75, 0.85),
+  else the ModelsDictionary default.
+
+- [x] Measured saturated hydraulic conductivity: `Soil.Ssks` and
+  `SoilLayers.Ssks` in cm/h (`migrations/20261024_add_soil_ssks.sql`). DSSAT
+  SSKS and APSIM KS (x 240 mm/day) use override, then layer measure, then soil
+  measure, then the default; a simple soil now uses `Soil.Ssks`.
+
+- [x] DSSAT soil files (standard and successive) read soils through
+  `SoilDataRepository`, parameters through `ParameterResolver` (tables
+  `dssat_soil_site` and `dssat_soil_data`, with layer-wise overrides) and
+  coordinates through `CoordinateResolver`, prefetched once per chunk; the
+  XX.SOL cache key is now soil, point and site code, so two points sharing a
+  soil and a management no longer reuse each other's coordinates. Output is
+  unchanged without overrides.
+
+- [x] APSIM soil arrays use layer-wise overrides through
+  `ParameterResolver.resolve_layers()`; `has_override(..., layer=k)` keeps
+  measured properties unless an override applies to that layer, and layer
+  overrides on scalar properties (for example `FOMCNRatio`) are rejected.
+
+- [x] Layer-wise soil overrides: `SoilParameterOverrides.NumLayer` (0 = whole
+  profile, 1..n = layer; `migrations/20261023_soil_parameter_overrides_numlayer.sql`),
+  `ParameterResolver.resolve_layers()` (layer, else profile, else default; errors
+  for a missing layer or a layer override on a whole-soil parameter), used by
+  STICS v11 `param.sol` for `typecailloux`, `infil` and `epd`.
+
+- [x] Merge `tests/stics_successive/test_sticssuccessiveconverter.py` into
+  `tests/test_sticssuccessiveconverter.py` on the text fixture; the season test
+  now checks the current rule (each season ends the day before the next season's
+  first operation, so it covers the fallow after its own harvest).
+
+- [x] DSSAT weather files (standard and successive) take TAV and AMP from the
+  optional `Coordinates.tav`/`amp` columns when filled, and fall back to the
+  ModelsDictionary defaults otherwise (`migrations/20261023_add_coordinates_tav_amp.sql`).
 
 - [x] Clarify APSIM tillage cn_rain as the cumulative rainfall threshold (mm)
   cancelling the tillage-induced Curve Number reduction, documenting its

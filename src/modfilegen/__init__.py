@@ -17,6 +17,9 @@ GlobalVariables = {"storeNumMinSimu" : 0,
                     "thirdyear": 0,
                     "dailyoutput": 0,
                     "sticsv11Q0Strategy": "default",
+                    # Soil albedo: "measured" (Soil.albedo) or "texture"
+                    # (re-estimated from Soil.SoilTextureType).
+                    "albedoStrategy": "measured",
                     "celsius_version": "v3",
                     "celsius_mode": "standard",
                     "dbCelsiusV32Template": "",

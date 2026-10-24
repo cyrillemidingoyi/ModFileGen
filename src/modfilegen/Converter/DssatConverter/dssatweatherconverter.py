@@ -13,6 +13,23 @@ def format_dssat_weather_date(year, day_of_year):
 def mean_dewpoint(minimum, maximum):
     return (float(minimum) + float(maximum)) / 2.0
 
+
+def coordinate_value(coordinate_row, name, default):
+    """Return ``Coordinates.<name>`` when present and filled, else ``default``.
+
+    Column names are matched without case. NULL, NaN and empty values fall
+    back to the ModelsDictionary default.
+    """
+    for key, value in coordinate_row.items():
+        if str(key).lower() != name.lower():
+            continue
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return default
+        if pd.isna(value):
+            return default
+        return value
+    return default
+
 class DssatweatherConverter(Converter):
     def __init__(self):
         super().__init__()
@@ -92,8 +109,8 @@ class DssatweatherConverter(Converter):
                     fileContent += v_fmt_general['LAT'].format(row['latitudeDD'])
                     fileContent += v_fmt_general["LONG"].format(row['longitudeDD'])
                     fileContent += v_fmt_general["ELEV"].format(row['altitude']) 
-                    fileContent += v_fmt_general["TAV"].format(float(tav)) 
-                    fileContent += v_fmt_general["AMP"].format(float(amp))
+                    fileContent += v_fmt_general["TAV"].format(float(coordinate_value(row, "tav", tav)))
+                    fileContent += v_fmt_general["AMP"].format(float(coordinate_value(row, "amp", amp)))
                     fileContent += v_fmt_general["REFHT"].format(float(refht))
                     fileContent += v_fmt_general["WNDHT"].format(float(wndht)) + "\n"
                                             
