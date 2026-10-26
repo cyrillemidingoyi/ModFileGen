@@ -1,2 +1,2 @@
-IdSoil,Model,TargetTable,Parameter,Value
-5.925_6.025,STICSV11,Paramsol,finert,0.45
+IdSoil,Model,TargetTable,Parameter,Value,NumLayer
+5.925_6.025,STICSV11,Paramsol,finert,0.45,0

@@ -8,9 +8,12 @@ Welcome to ModFileGen's documentation!
    introduction
    installation
    usage
+   configuration
    output_configuration
    database
    models
    api
    contributing
+   authors
+   HISTORY
    license

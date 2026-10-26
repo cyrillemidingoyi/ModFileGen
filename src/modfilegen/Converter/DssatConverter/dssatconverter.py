@@ -18,6 +18,8 @@ from modfilegen.weather_coverage import (
     keep_simulations_with_weather,
 )
 from modfilegen.coordinate_resolver import CoordinateResolver
+from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.soil_repository import SoilDataRepository
 from modfilegen.converter import Converter
 from modfilegen.output_configuration import OutputConfiguration
 from .summary_output import transform_summary_dataframe
@@ -227,6 +229,12 @@ def process_chunk(*args):
     MasterInput_Connection = sqlite3.connect(mi)
     coordinate_resolver = CoordinateResolver(MasterInput_Connection)
     coordinate_resolver.prefetch(row["idPoint"] for row in chunk)
+    # Soils and their parameters are read once per chunk, not per simulation.
+    soil_ids = {row["idsoil"] for row in chunk}
+    soil_repository = SoilDataRepository(MasterInput_Connection)
+    soil_repository.prefetch(soil_ids)
+    parameter_resolver = ParameterResolver(ModelDictionary_Connection, MasterInput_Connection)
+    parameter_resolver.prefetch("dssat", dssatsoilconverter.PARAMETER_TABLES, soil_ids)
         
     for i, row in enumerate(chunk):
         write_header = not os.path.exists(tmp_csv)
@@ -270,14 +278,18 @@ def process_chunk(*args):
                     write_file(usmdir, Mngt.upper() + str(int(Year)+2)[2:4] + "01" + ".WTH", values[2])
                 #write_file(usmdir, keys[1], values[1])
             
-            # soil
-            simPath = os.path.join(tempDir, str(row["idsim"]), str(row["idsoil"]), str(row["idPoint"]), str(row["StartYear"]),str(row["idMangt"]))
-            soilid =  row["idsoil"] + "." + row["idMangt"]
+            # soil: XX.SOL depends on the soil, the point coordinates and the
+            # first four characters of idMangt (site code).
+            soilid = (
+                str(row["idsoil"]).strip().casefold(),
+                str(row["idPoint"]).strip().casefold(),
+                str(row["idMangt"])[:4],
+            )
             if soilid not in soiltable:
-                soilconverter = dssatsoilconverter.DssatSoilConverter()
-                r = soilconverter.export(simPath, ModelDictionary_Connection, MasterInput_Connection, usmdir)
-                soiltable[soilid] = r
-                del soilconverter  # Free converter
+                soiltable[soilid] = dssatsoilconverter.DssatSoilConverter().export(
+                    parameter_resolver, soil_repository, usmdir, row["idsoil"],
+                    row["idMangt"], coordinate_resolver.resolve(row["idPoint"]),
+                )
             else:
                 write_file(usmdir, "XX.SOL", soiltable[soilid])
             

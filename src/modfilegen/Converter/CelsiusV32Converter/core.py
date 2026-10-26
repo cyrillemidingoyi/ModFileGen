@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 
 from modfilegen.parameter_resolver import ParameterResolver
+from modfilegen.soil_repository import runoff_type_code
 from modfilegen.weather_coverage import keep_simulations_with_weather
 
 
@@ -437,6 +438,37 @@ def _copy_initial_conditions(source, target, initial_ids):
         _insert(target, "ParamIni", values)
 
 
+def _celsius_runoff_codes(source):
+    """Map MasterInput RunoffTypes.RunoffType to the CELSIUS TypeRui code.
+
+    Returns ``None`` for databases without ``CodRunoffCelsius``: their
+    ``Soil.RunoffType`` is then written as is, as before.
+    """
+    if "runofftypes" not in _tables(source):
+        return None
+    columns = {name.lower() for name in _columns(source, "RunoffTypes")}
+    if "codrunoffcelsius" not in columns:
+        return None
+    return {
+        runoff_type_code(_value(row, "RunoffType")): _value(row, "CodRunoffCelsius")
+        for row in _rows(source, "SELECT RunoffType, CodRunoffCelsius FROM RunoffTypes")
+    }
+
+
+def _celsius_runoff_type(soil, runoff_codes):
+    """CELSIUS TypeRui of a soil: the CodRunoffCelsius of its RunoffType."""
+    runoff_type = _value(soil, "RunoffType")
+    if runoff_codes is None:
+        return _as_int(runoff_type, 1)
+    code = runoff_codes.get(runoff_type_code(runoff_type))
+    if code is None:
+        raise ValueError(
+            f"No RunoffTypes.CodRunoffCelsius for RunoffType {runoff_type!r} "
+            f"of soil {_value(soil, 'IdSoil')!r}"
+        )
+    return _as_int(code)
+
+
 def _copy_soils(source, target, soil_ids, parameter_resolver):
     defaults = _first_row(target, "Soil")
     target_columns = {
@@ -452,6 +484,7 @@ def _copy_soils(source, target, soil_ids, parameter_resolver):
         f"SELECT * FROM Soil WHERE IdSoil IN ({placeholders})",
         tuple(soil_ids),
     )
+    runoff_codes = _celsius_runoff_codes(source)
     layers_by_soil = defaultdict(list)
     if "soillayers" in _tables(source):
         for layer in _rows(
@@ -493,7 +526,7 @@ def _copy_soils(source, target, soil_ids, parameter_resolver):
                 "CsurNhum": (
                     _as_float(_value(soil, "OrganicC")) / organic_n_stock
                 ),
-                "TypeRui": _as_int(_value(soil, "RunoffType"), 1),
+                "TypeRui": _celsius_runoff_type(soil, runoff_codes),
                 "Clay": _as_float(_value(soil, "clay")),
                 "pHeau": _as_float(_value(soil, "pH")),
             }

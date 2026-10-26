@@ -22,6 +22,7 @@ class ParameterResolver:
 
         self._definitions = {}
         self._overrides = {}
+        self._layer_overrides = {}
         self._resolved = {}
         self._prefetched = set()
         self._management_overrides = {}
@@ -76,6 +77,10 @@ class ParameterResolver:
     def _placeholders(values):
         return ", ".join("?" for _ in values)
 
+    def _has_column(self, table, column):
+        rows = self._master_input.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(self._normalize(row[1]) == self._normalize(column) for row in rows)
+
     def _load_definitions(self, model, target_tables):
         tables = tuple(sorted(target_tables))
         query = f"""
@@ -114,11 +119,15 @@ class ParameterResolver:
         if not soils:
             return
 
+        # Databases created before NumLayer only hold whole-profile values.
+        layer = (
+            "NumLayer" if self._has_column("SoilParameterOverrides", "NumLayer") else "0"
+        )
         # Keep batches below SQLite's commonly configured parameter limit.
         for offset in range(0, len(soils), 500):
             batch = soils[offset:offset + 500]
             query = f"""
-                SELECT IdSoil, TargetTable, Parameter, Value
+                SELECT IdSoil, TargetTable, Parameter, Value, {layer}
                 FROM SoilParameterOverrides
                 WHERE lower(Model) = ?
                   AND lower(TargetTable) IN ({self._placeholders(tables)})
@@ -133,15 +142,20 @@ class ParameterResolver:
                     raise
                 return
 
-            for id_soil, target_table, parameter, raw_value in rows:
+            for id_soil, target_table, parameter, raw_value, num_layer in rows:
                 table_key = self._normalize(target_table)
                 soil_key = self._normalize(id_soil)
                 parameter_key = self._normalize(parameter)
                 definition = self._definitions[(model, table_key)][parameter_key]
                 value = self._convert_value(raw_value, definition)
-                self._overrides.setdefault(
-                    (model, table_key, soil_key), {}
-                )[parameter_key] = value
+                key = (model, table_key, soil_key)
+                num_layer = int(num_layer or 0)
+                if num_layer == 0:
+                    self._overrides.setdefault(key, {})[parameter_key] = value
+                else:
+                    self._layer_overrides.setdefault(key, {}).setdefault(
+                        num_layer, {}
+                    )[parameter_key] = value
 
     def prefetch(self, model: str, target_tables: Iterable[str], soil_ids: Iterable[str]):
         model_key = self._normalize(model)
@@ -191,15 +205,84 @@ class ParameterResolver:
                 f"model={model!r}, table={target_table!r}, idSoil={id_soil!r}"
             ) from exc
 
-    def has_override(
-        self, model: str, target_table: str, parameter: str, id_soil: str
-    ) -> bool:
+    def resolve_layers(
+        self,
+        model: str,
+        target_table: str,
+        id_soil: str,
+        layer_count: int,
+        parameters: Optional[Iterable[str]] = None,
+    ):
+        """Return one read-only mapping per layer (1 to ``layer_count``).
+
+        For each of ``parameters`` at layer k: the override with
+        ``NumLayer = k``, else the whole-profile override (``NumLayer = 0``),
+        else the ModelsDictionary default (``None`` when there is none). Raises
+        ``ValueError`` for an
+        override on a layer the soil does not have, or a layer override on a
+        parameter that is not in ``parameters`` (a whole-soil parameter).
+        Without ``parameters``, every known parameter is returned and that
+        whole-soil check is skipped.
+        """
+        profile = self.resolve(model, target_table, id_soil)
         key = (
             self._normalize(model),
             self._normalize(target_table),
             self._normalize(id_soil),
         )
-        return self._normalize(parameter) in self._overrides.get(key, {})
+        by_layer = self._layer_overrides.get(key, {})
+        if parameters is None:
+            names = list(profile)
+            names += sorted({name for values in by_layer.values() for name in values}
+                            - set(names))
+        else:
+            names = [self._normalize(parameter) for parameter in parameters]
+        for num_layer, values in sorted(by_layer.items()):
+            if num_layer > layer_count:
+                raise ValueError(
+                    f"SoilParameterOverrides sets {sorted(values)} on layer "
+                    f"{num_layer} of soil {id_soil!r}, which has {layer_count} "
+                    f"layer(s) for {model}/{target_table}"
+                )
+            whole_soil = sorted(set(values) - set(names))
+            if parameters is not None and whole_soil:
+                raise ValueError(
+                    f"SoilParameterOverrides sets whole-soil parameter(s) "
+                    f"{whole_soil} on layer {num_layer} of soil {id_soil!r}; "
+                    "use NumLayer = 0"
+                )
+        return tuple(
+            MappingProxyType({
+                name: by_layer.get(num_layer, {}).get(name, profile.get(name))
+                for name in names
+            })
+            for num_layer in range(1, layer_count + 1)
+        )
+
+    def has_override(
+        self,
+        model: str,
+        target_table: str,
+        parameter: str,
+        id_soil: str,
+        layer: Optional[int] = None,
+    ) -> bool:
+        """Tell whether an explicit soil override applies to ``parameter``.
+
+        Without ``layer``, only whole-profile overrides (``NumLayer = 0``)
+        count. With ``layer``, an override of that layer counts too.
+        """
+        key = (
+            self._normalize(model),
+            self._normalize(target_table),
+            self._normalize(id_soil),
+        )
+        name = self._normalize(parameter)
+        if name in self._overrides.get(key, {}):
+            return True
+        return layer is not None and name in (
+            self._layer_overrides.get(key, {}).get(int(layer), {})
+        )
 
     def _load_management_overrides(self, model, target_tables, management_ids):
         tables = tuple(sorted(target_tables))
