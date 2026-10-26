@@ -2,6 +2,10 @@ from modfilegen.converter import Converter
 from .soil_parameter_calculators import calculate_q0
 import traceback
 
+# param.sol parameters written once per soil layer.
+LAYER_PARAMETERS = ("typecailloux", "infil", "epd")
+
+
 class SticsParamSolConverter(Converter):
     def __init__(self):
         super().__init__()
@@ -48,7 +52,18 @@ class SticsParamSolConverter(Converter):
                 f"{float(defaults['capiljour']):.4f}", f"{float(defaults['humcapil']):.4f}",
                 f"{int(float(defaults['profdenit'])):.0f}", f"{float(defaults['vpotdenit']):.4f}"
             ]
-            file_lines.append(" ".join(line3))            
+            file_lines.append(" ".join(line3))
+            # A 'simple' soil has one layer; a detailed one has its SoilLayers.
+            layer_count = 1 if row["SoilOption"] == "simple" else len(layers)
+            layer_values = parameter_resolver.resolve_layers(
+                "sticsv11", "paramsol", id_soil, layer_count, LAYER_PARAMETERS
+            )
+
+            def layer_codes(index):
+                # Lines beyond the soil's layers keep the profile values.
+                values = layer_values[index] if index < layer_count else defaults
+                return [f"{int(float(values[name]))}" for name in LAYER_PARAMETERS]
+
             for i in range(5):
                 if row["SoilOption"] == "simple":
                     #fileContent += "     1   "
@@ -65,9 +80,7 @@ class SticsParamSolConverter(Converter):
                         f"{row['Wwp']/row['bd']:.2f}",
                         f"{row['bd']:.2f}",
                         f"{row['cf']:.2f}",
-                        f"{int(defaults['typecailloux'])}",
-                        f"{int(float(defaults['infil']))}",
-                        f"{int(defaults['epd'])}"
+                        *layer_codes(i),
                     ]
                     file_lines[-1] += " " + " ".join(values)
                 else:
@@ -78,16 +91,12 @@ class SticsParamSolConverter(Converter):
                             f"{layers[i]['Wwp']/layers[i]['bd']:.2f}",
                             f"{layers[i]['bd']:.2f}",
                             f"{row['cf']:.2f}",
-                            f"{int(defaults['typecailloux'])}",
-                            f"{int(float(defaults['infil']))}",
-                            f"{int(defaults['epd'])}"
+                            *layer_codes(i),
                         ]
                         
                     else:
                         values = ["     1  ","0.00","0.00","0.00","0.00",f"{row['cf']:.2f}",
-                            f"{int(defaults['typecailloux'])}",
-                            f"{int(float(defaults['infil']))}",
-                            f"{int(defaults['epd'])}"
+                            *layer_codes(i),
                         ]
                     file_lines.append(" ".join(values))
         try:

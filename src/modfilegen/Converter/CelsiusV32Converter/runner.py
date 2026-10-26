@@ -1,6 +1,7 @@
 """Configuration and process runner for CELSIUS V32."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 from pathlib import Path
 import shutil
 import sqlite3
@@ -30,13 +31,29 @@ def _output_configuration():
     return configuration, GlobalVariables.get("outputSelection", "legacy")
 
 
+def _occurrence_sowing_year(start_year, sowing_day):
+    """Return the actual sowing year of one generated CELSIUS occurrence."""
+    if pd.isna(start_year):
+        return None
+    if pd.isna(sowing_day):
+        return int(start_year)
+    sowing = date(int(start_year), 1, 1) + timedelta(
+        days=int(float(sowing_day)) - 1
+    )
+    return sowing.year
+
+
 def _summary_dataframe(
     master, celsius_database, output_configuration, output_selection
 ):
     with sqlite3.connect(celsius_database) as source:
         outputs = pd.read_sql_query(
             """
-            SELECT o.*, s.Situation, s.codesuite
+            SELECT o.*, s.Situation, s.codesuite,
+                   s.StartYear AS OccurrenceStartYear,
+                   (SELECT MIN(t.isem)
+                    FROM Tech_perCrop AS t
+                    WHERE t.idTech_Com=s.idTech_Com) AS OccurrenceSowingDay
             FROM OutputSynt AS o
             LEFT JOIN SimUnitList AS s ON s.idsim=o.Idsim
             ORDER BY s.ChampTri
@@ -50,6 +67,7 @@ def _summary_dataframe(
 
     season_orders = []
     original_ids = []
+    occurrence_times = []
     for _, row in outputs.iterrows():
         generated_id = str(row.get("Idsim", ""))
         season_order = 1
@@ -60,6 +78,12 @@ def _summary_dataframe(
                 season_order = 1
         season_orders.append(season_order)
         original_ids.append(row.get("Situation") or generated_id)
+        occurrence_times.append(
+            _occurrence_sowing_year(
+                row.get("OccurrenceStartYear"),
+                row.get("OccurrenceSowingDay"),
+            )
+        )
     outputs["Idsim"] = original_ids
     outputs["SeasonOrder"] = season_orders
     outputs["PlantOrder"] = 1
@@ -78,6 +102,7 @@ def _summary_dataframe(
                 "time": int(simulation["StartYear"]),
             }
     outputs = add_spatial_time_columns(outputs, simulation_context)
+    outputs["time"] = occurrence_times
     return transform_summary_dataframe(
         outputs,
         output_configuration,

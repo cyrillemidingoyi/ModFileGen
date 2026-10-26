@@ -10,7 +10,7 @@ CREATE TABLE [Coordinates] (
 [idPoint] VARCHAR(25),
 [startRain] SMALLINT(5),
 [EndRain] SMALLINT(5)
-);
+, tav REAL, amp REAL);
 
 CREATE TABLE "CropManagement" (
 "idMangt" TEXT,
@@ -215,7 +215,7 @@ CREATE TABLE "Soil" (
   "Slope" TEXT,
   "RunoffType" INTEGER,
   "albedo" REAL
-, Ssat REAL);
+, Ssat REAL, Ssks REAL, DrainFAO INTEGER CHECK (DrainFAO BETWEEN 1 AND 7));
 
 CREATE TABLE [SoilLayers] (
 [idsoil] VARCHAR(30),
@@ -233,16 +233,17 @@ CREATE TABLE [SoilLayers] (
 [OrganicC] DOUBLE(53),
 [Clay] DOUBLE(53),
 [Silt] DOUBLE(53)
-);
+, Ssks REAL);
 
-CREATE TABLE SoilParameterOverrides (
-    IdSoil          TEXT NOT NULL,
-    Model           TEXT NOT NULL,
-    TargetTable     TEXT NOT NULL,
-    Parameter       TEXT NOT NULL,
-    Value           TEXT NOT NULL,
-    PRIMARY KEY (IdSoil, Model, TargetTable, Parameter),
-    FOREIGN KEY (IdSoil) REFERENCES Soil(IdSoil)
+CREATE TABLE "SoilParameterOverrides" (
+    IdSoil      TEXT NOT NULL,
+    Model       TEXT NOT NULL,
+    TargetTable TEXT NOT NULL,
+    Parameter   TEXT NOT NULL,
+    Value       TEXT NOT NULL,
+    NumLayer    INTEGER NOT NULL DEFAULT 0 CHECK (NumLayer >= 0),
+    PRIMARY KEY (IdSoil, Model, TargetTable, Parameter, NumLayer),
+    FOREIGN KEY (IdSoil) REFERENCES Soil (IdSoil)
 );
 
 CREATE TABLE [SoilTillPolicy] (
@@ -330,6 +331,9 @@ CREATE INDEX idx_idsoill ON Soil (Lower(IdSoil));
 
 CREATE UNIQUE INDEX uq_soil_idsoil
 ON Soil(IdSoil);
+
+CREATE INDEX idx_soil_parameter_override_lookup
+ON SoilParameterOverrides (Model, TargetTable, IdSoil);
 
 CREATE INDEX idx_idsoiltl ON SoilTypes (Lower(SoilTextureType));
 
