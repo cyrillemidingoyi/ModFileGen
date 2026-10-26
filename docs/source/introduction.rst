@@ -126,6 +126,7 @@ A first look
     GlobalVariables["pltfolder"] = "cultivars/stics"
     GlobalVariables["stics_version"] = "v11"
     GlobalVariables["stics_mode"] = "successive"
+    GlobalVariables["albedoStrategy"] = "texture"
     run_stics()                                    # STICS v11, rotations
 
 Both runs read the same database and write their results, with the same
