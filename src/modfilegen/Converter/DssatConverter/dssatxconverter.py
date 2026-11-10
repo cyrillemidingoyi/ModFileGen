@@ -5,6 +5,11 @@ import pandas as pd
 import traceback
 import shutil
 
+from modfilegen.Converter.DssatConverter.dssatsoilconverter import (
+    LAYER_TABLE,
+    fine_earth_fraction,
+)
+
 v_fmt_general = {
     "PEOPLE": "{:<}",
     "ADDRESS": "{:<}",
@@ -427,7 +432,13 @@ def writeBlockSoilAnalysisData(dssat_tableName, Connection):
     return fileContent
 
 
-def writeBlockInitialCondition(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection):
+def writeBlockInitialCondition(
+    dssat_tableName,
+    idSim,
+    modelDictionary_Connection,
+    master_input_connection,
+    parameter_resolver=None,
+):
     fileContent = ""
     dssat_queryRead = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, modelDictionary_Connection)
@@ -479,17 +490,38 @@ def writeBlockInitialCondition(dssat_tableName, idSim, modelDictionary_Connectio
     Dv = rw["dv"].values[0]
     fileContent += v_fmt_init["ICNAME"].format(Dv) + "\n"
     dssat_tableName = "dssat_x_initial_condition_data"
-    fileContent += writeBlockInitialConditionData(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection)
+    fileContent += writeBlockInitialConditionData(
+        dssat_tableName,
+        idSim,
+        modelDictionary_Connection,
+        master_input_connection,
+        parameter_resolver,
+    )
     return fileContent
 
  
 
-def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connection):
+def initial_water_content(slll, sdul, available_water_percent):
+    """Interpolate SH2O between the effective DSSAT lower and upper limits."""
+    fraction = float(available_water_percent) / 100.0
+    return float(slll) + fraction * (float(sdul) - float(slll))
+
+
+def writeBlockInitialConditionData(
+    dssat_tableName,
+    idsim,
+    Connection,
+    MI_Connection,
+    parameter_resolver=None,
+):
     dssat_queryRead  = "Select Champ, Default_Value_Datamill, defaultValueOtherSource, IFNULL([defaultValueOtherSource],  [Default_Value_Datamill]) As dv From Variables Where ((model = 'dssat') And ([Table] = '%s'));"%(dssat_tableName)
     DT = pd.read_sql_query(dssat_queryRead, Connection)
     siteColumnsHeader = "@C  ICBL  SH2O  SNH4  SNO3"
-    fetchAllQuery  = """SELECT DISTINCT Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc', Soil.bd as 'soil.bd', Soil.*,
-                SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc', SoilLayers.*, 
+    fetchAllQuery  = """SELECT DISTINCT Soil.IdSoil AS 'Soil.IdSoil',
+                Soil.Wwp AS 'Soil.Wwp', Soil.Wfc AS 'Soil.Wfc',
+                Soil.cf AS 'Soil.cf', Soil.bd as 'soil.bd', Soil.*,
+                SoilLayers.Wwp AS 'SoilLayers.Wwp', SoilLayers.Wfc AS 'SoilLayers.Wfc',
+                SoilLayers.cf AS 'SoilLayers.cf', SoilLayers.*,
                 InitialConditions.* FROM InitialConditions INNER JOIN 
                 ((Soil INNER JOIN SimUnitList ON Lower(Soil.IdSoil) = Lower(SimUnitList.idsoil)) LEFT JOIN SoilLayers ON Lower(Soil.IdSoil) = Lower(SoilLayers.idsoil))
                 ON InitialConditions.idIni = SimUnitList.idIni Where IdSim ='%s' Order by NumLayer;"""%(idsim)
@@ -497,7 +529,46 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
     fileContent = ""
     fileContent += siteColumnsHeader + "\n"
     has_nh4initf = "NH4initf" in dataTable.columns
-    if dataTable["SoilOption"].values[0].lower() == "simple":
+    simple = dataTable["SoilOption"].values[0].lower() == "simple"
+    layer_count = 1 if simple else dataTable.shape[0]
+    id_soil = dataTable["Soil.IdSoil"].values[0]
+    layer_parameters = None
+    if parameter_resolver is not None:
+        layer_parameters = parameter_resolver.resolve_layers(
+            "dssat", LAYER_TABLE, id_soil, layer_count
+        )
+
+    def sh2o(row_index, layer_number, wwp, wfc):
+        layer_cf = dataTable["SoilLayers.cf"].values[row_index]
+        shared_cf = (
+            layer_cf
+            if not simple and pd.notna(layer_cf)
+            else dataTable["Soil.cf"].values[row_index]
+        )
+        fine_earth = fine_earth_fraction(shared_cf)
+        slll = float(wwp) / 100.0 * fine_earth
+        sdul = float(wfc) / 100.0 * fine_earth
+        if parameter_resolver is not None:
+            parameters = layer_parameters[layer_number - 1]
+            if parameter_resolver.has_override(
+                "dssat", LAYER_TABLE, "slcf", id_soil, layer=layer_number
+            ):
+                fine_earth = fine_earth_fraction(parameters["slcf"])
+                slll = float(wwp) / 100.0 * fine_earth
+                sdul = float(wfc) / 100.0 * fine_earth
+            if parameter_resolver.has_override(
+                "dssat", LAYER_TABLE, "slll", id_soil, layer=layer_number
+            ):
+                slll = float(parameters["slll"])
+            if parameter_resolver.has_override(
+                "dssat", LAYER_TABLE, "sdul", id_soil, layer=layer_number
+            ):
+                sdul = float(parameters["sdul"])
+        return initial_water_content(
+            slll, sdul, dataTable["WStockinit"].values[row_index]
+        )
+
+    if simple:
         for i in range(2):
             rw = DT[DT["Champ"] == "LNIC"]
             Dv = rw["dv"].values[0]
@@ -506,7 +577,10 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
                 fileContent += v_fmt_init["ICBL"].format(30.0)
             else:
                 fileContent += v_fmt_init["ICBL"].format(dataTable["SoilTotalDepth"].values[0])
-            fileContent += v_fmt_init["SH2O"].format((dataTable["Soil.Wwp"].values[0] / 100) + dataTable["WStockinit"].values[0] * (dataTable["Soil.Wfc"].values[0] - dataTable["Soil.Wwp"].values[0]) / 10000)
+            fileContent += v_fmt_init["SH2O"].format(sh2o(
+                0, 1, dataTable["Soil.Wwp"].values[0],
+                dataTable["Soil.Wfc"].values[0],
+            ))
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
             # fileContent.Append(FormatNumber(10 * dataTable.Rows(0).Item("NH4init") / (dataTable.Rows(0).Item("soil.bd") * dataTable.Rows(0).Item("SoilTotalDepth")), 2).ToString.PadLeft(5))
@@ -522,7 +596,10 @@ def writeBlockInitialConditionData(dssat_tableName, idsim, Connection, MI_Connec
             Dv = rw["dv"].values[0]
             fileContent += v_fmt_init["C"].format(float(Dv))
             fileContent += v_fmt_init["ICBL"].format(dataTable["Ldown"].values[i])
-            fileContent += v_fmt_init["SH2O"].format((dataTable["SoilLayers.Wwp"].values[i] / 100 + dataTable["WStockinit"].values[i] * (dataTable["SoilLayers.Wfc"].values[i] - dataTable["SoilLayers.Wwp"].values[i]) / 10000))
+            fileContent += v_fmt_init["SH2O"].format(sh2o(
+                i, i + 1, dataTable["SoilLayers.Wwp"].values[i],
+                dataTable["SoilLayers.Wfc"].values[i],
+            ))
             rw = DT[DT["Champ"] == "INH4"]
             Dv = rw["dv"].values[0]
             if has_nh4initf and pd.notna(dataTable["NH4initf"].values[i]):
@@ -1421,7 +1498,17 @@ class DssatXConverter(Converter):
     def __init__(self):
         super().__init__()
 
-    def export(self, directory_path, modelDictionary_Connection, master_input_connection,usmdir, crop, dailyoutput, dssat_version="v47"):
+    def export(
+        self,
+        directory_path,
+        modelDictionary_Connection,
+        master_input_connection,
+        usmdir,
+        crop,
+        dailyoutput,
+        dssat_version="v47",
+        parameter_resolver=None,
+    ):
         ST = directory_path.split(os.sep)
         idSim = ST[-2]
         idMangt = ST[-1]
@@ -1527,7 +1614,13 @@ class DssatXConverter(Converter):
         # Initial conditions
         dssat_tableName = "dssat_x_initial_condition"
         dssat_tableId = "dssat_x_exp_id"
-        fileContent += writeBlockInitialCondition(dssat_tableName, idSim, modelDictionary_Connection, master_input_connection)      
+        fileContent += writeBlockInitialCondition(
+            dssat_tableName,
+            idSim,
+            modelDictionary_Connection,
+            master_input_connection,
+            parameter_resolver,
+        )
         
         # Planting details
         dssat_tableName = "dssat_x_planting_detail"

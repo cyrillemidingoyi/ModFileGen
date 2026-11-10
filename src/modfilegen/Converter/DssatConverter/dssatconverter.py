@@ -304,6 +304,7 @@ def process_chunk(*args):
                 crop,
                 dailyoutput,
                 dssat_version,
+                parameter_resolver,
             )
             del xconverter  # Free converter
 

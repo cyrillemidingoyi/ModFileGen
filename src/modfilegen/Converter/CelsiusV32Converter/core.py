@@ -63,6 +63,34 @@ def _as_float(value, default=0.0):
     return float(value)
 
 
+def _topsoil_fine_earth_fraction(soil, layers, depth=30.0):
+    """Return the volume fraction of fine earth over the CELSIUS N depth.
+
+    Shared ``cf`` values are volumetric coarse-fragment percentages.  CELSIUS
+    converts ``StockN`` from a fine-earth concentration over a fixed 30 cm
+    depth, so a detailed profile uses the depth-weighted fine-earth fraction
+    over that interval.  Any uncovered part falls back to ``Soil.cf``.
+    """
+    fallback = _as_float(_value(soil, "cf"), 0.0)
+    weighted, covered = 0.0, 0.0
+    for layer in layers:
+        upper = _as_float(_value(layer, "Lup"), covered)
+        lower = _value(layer, "Ldown", "DepthCm")
+        if lower in (None, ""):
+            continue
+        overlap = max(0.0, min(float(lower), depth) - max(upper, 0.0))
+        if overlap == 0.0:
+            continue
+        coarse = _as_float(_value(layer, "cf", default=fallback), fallback)
+        weighted += overlap * (1.0 - coarse / 100.0)
+        covered += overlap
+        if covered >= depth:
+            break
+    if covered < depth:
+        weighted += (depth - covered) * (1.0 - fallback / 100.0)
+    return weighted / depth
+
+
 def _julian(year, day):
     return date(_as_int(year), 1, 1) + timedelta(days=_as_int(day) - 1)
 
@@ -522,7 +550,12 @@ def _copy_soils(source, target, soil_ids, parameter_resolver):
                 "NbCouches": len(layers) or 1,
                 "Zmes": _as_int(_value(soil, "SoilTotalDepth")),
                 "ZObstacleRac": _as_float(_value(soil, "SoilRDepth")),
-                "StockN": organic_n_stock,
+                # OrganicNStock is a concentration measured on fine earth.
+                # CELSIUS later converts it to kg/ha over a fixed 30 cm depth
+                # without a coarse-fragment correction.
+                "StockN": organic_n_stock * _topsoil_fine_earth_fraction(
+                    soil, layers
+                ),
                 "CsurNhum": (
                     _as_float(_value(soil, "OrganicC")) / organic_n_stock
                 ),

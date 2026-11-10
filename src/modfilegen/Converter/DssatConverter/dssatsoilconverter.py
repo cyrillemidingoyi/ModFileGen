@@ -28,6 +28,19 @@ def _number(value):
     return float("nan") if pd.isna(value) else value
 
 
+def fine_earth_fraction(coarse_fragments):
+    """Return the fine-earth volume fraction represented by DSSAT ``SLCF``."""
+    if pd.isna(coarse_fragments):
+        return 1.0
+    coarse_fragments = float(coarse_fragments)
+    if not 0.0 <= coarse_fragments <= 100.0:
+        raise ValueError(
+            "Coarse-fragment content (cf/SLCF) must be between 0 and 100%, "
+            f"not {coarse_fragments!r}"
+        )
+    return 1.0 - coarse_fragments / 100.0
+
+
 def drainage_rate(site, soil, has_override):
     """SLDR: explicit override, else the FAO drainage class, else the default."""
     drain_fao = soil.get("drainfao")
@@ -91,21 +104,33 @@ class DssatSoilConverter(Converter):
 
         def layer_line(depth, number, values, wwp, wfc, ssat, ssks, bd, carbon,
                        clay, silt, cf, nitrogen, ph):
+            resolved_cf = measured("slcf", cf, number)
+            fine_earth = fine_earth_fraction(resolved_cf)
             return "".join([
                 v_fmt["SLB"].format(depth),
                 v_fmt["SLMH"].format(values["slmh"]),
-                v_fmt["SLLL"].format(float(measured("slll", _number(wwp) / 100, number))),
-                v_fmt["SDUL"].format(float(measured("sdul", _number(wfc) / 100, number))),
-                v_fmt["SSAT"].format(float(measured("ssat", ssat, number))),
+                # Shared water contents are volumetric values for fine earth;
+                # DSSAT layer water contents represent the whole soil volume.
+                v_fmt["SLLL"].format(float(measured(
+                    "slll", _number(wwp) / 100 * fine_earth, number))),
+                v_fmt["SDUL"].format(float(measured(
+                    "sdul", _number(wfc) / 100 * fine_earth, number))),
+                v_fmt["SSAT"].format(float(measured(
+                    "ssat", ssat * fine_earth, number))),
                 v_fmt["SRGF"].format(float(values["srgf"])),
                 v_fmt["SSKS"].format(float(
                     values["ssks"] if pd.isna(ssks) else measured("ssks", ssks, number))),
                 v_fmt["SBDM"].format(_number(measured("sbdm", bd, number))),
-                v_fmt["SLOC"].format(_number(measured("sloc", carbon, number))),
+                # Shared C and N concentrations are measured on fine earth.
+                # DSSAT derives stocks with whole-soil BD and layer thickness,
+                # so measured values must be expressed per total soil volume.
+                v_fmt["SLOC"].format(_number(measured(
+                    "sloc", _number(carbon) * fine_earth, number))),
                 v_fmt["SLCL"].format(_number(measured("slcl", clay, number))),
                 v_fmt["SLSI"].format(_number(measured("slsi", silt, number))),
-                v_fmt["SLCF"].format(_number(measured("slcf", cf, number))),
-                v_fmt["SLNI"].format(_number(measured("slni", nitrogen, number))),
+                v_fmt["SLCF"].format(_number(resolved_cf)),
+                v_fmt["SLNI"].format(_number(measured(
+                    "slni", _number(nitrogen) * fine_earth, number))),
                 v_fmt["SLHW"].format(_number(measured("slhw", ph, number))),
                 _code(values["slhb"], "SLHB"),
                 _code(values["scec"], "SCEC"),
@@ -156,7 +181,8 @@ class DssatSoilConverter(Converter):
                     # Measured conductivity: layer, else soil.
                     layer.get("ssks") if pd.notna(layer.get("ssks")) else soil.get("ssks"),
                     layer["bd"], layer["organicc"],
-                    layer.get("clay"), layer.get("silt"), layer.get("cf"),
+                    layer.get("clay"), layer.get("silt"),
+                    layer.get("cf") if pd.notna(layer.get("cf")) else soil.get("cf"),
                     layer.get("totaln"), layer.get("ph"),
                 ))
         lines.append("@  SLB  SLPX  SLPT  SLPO CACO3  SLAL  SLFE  SLMN  SLBS  SLPA  SLPB  SLKE  SLMG  SLNA  SLSU  SLEC  SLCA\n")

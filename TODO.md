@@ -110,6 +110,38 @@ and linked to an issue or pull request when one exists.
 
 ## Completed
 
+- [x] Align DSSAT initial-condition `SH2O` with effective whole-soil `SLLL`
+  and `SDUL`, including shared fine-earth correction, layer/profile `SLCF`
+  fallback and explicit DSSAT overrides in standard and successive generation.
+
+- [x] Express shared fine-earth organic C and total N concentrations as DSSAT
+  whole-soil-equivalent `SLOC` and `SLNI` using `(1 - SLCF/100)` for simple
+  and detailed soils, while preserving explicit DSSAT layer overrides.
+
+- [x] Express shared fine-earth volumetric water limits as DSSAT whole-soil
+  `SLLL`, `SDUL` and `SSAT` using `(1 - SLCF/100)`, without changing fine-earth
+  bulk density or explicitly overridden DSSAT values.
+
+- [x] Correct CELSIUS V32 `Soil.StockN`, whose shared `OrganicNStock` input is
+  measured on fine earth, by the depth-weighted fine-earth volume fraction
+  over CELSIUS's fixed 0-30 cm organic-N layer; explicit model overrides still
+  take precedence.
+
+- [x] Runoff types are text codes: `soil_repository.runoff_type_code` maps 2,
+  2.0 and '2' to '2'; `SoilDataRepository` attaches `RunoffCoefBSoil` and
+  `CurveNumber` by that code (no SQL join on mixed types), CELSIUS V32 uses it
+  for `TypeRui`, STICS v9 joins on text, and the fixture declares
+  `Soil.RunoffType` TEXT.
+
+- [x] CELSIUS V32 `Soil.TypeRui` is the `RunoffTypes.CodRunoffCelsius` of the
+  soil's `RunoffType` (for example 2 -> 6), instead of the MasterInput code
+  itself; a type without a CELSIUS code is an error, and databases without the
+  column keep the previous behaviour.
+
+- [x] DSSAT crop model and experiment-file extension use the current crop
+  `ListCultOption.CG` + `DSCROP` (for example `MZCER048`) instead of the
+  previous crop `PRCROP`, which only feeds the initial-condition `PCR`.
+
 - [x] Document the configuration in `docs/source/configuration.rst`: global
   options with values and defaults, `albedoStrategy` and `sticsv11Q0Strategy`,
   soil parameter priority rules (overrides, `NumLayer`, measured properties,

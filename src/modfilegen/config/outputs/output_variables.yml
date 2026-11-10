@@ -457,7 +457,7 @@ variables:
         status: unverified
   soil_nitrogen:
     column: SoilN
-    description: Azote mineral du sol
+    description: Azote mineral du sol (over the depth profmes)
     type: REAL
     unit: kgN/ha
     models:
@@ -593,7 +593,7 @@ variables:
         status: verified
   cumulative_transpiration:
     column: Transp
-    description: Transpiration cumulee de la culture
+    description: Transpiration cumulee de la culture from planting to harvest
     type: REAL
     unit: mm
     models:
@@ -714,13 +714,19 @@ variables:
         status: verified
       stics:
         source: mod_rapport.sti
-        field: msrac(n)
+        fields:
+        - msrac(n)
+        - msracmort
+        operation: sum
         source_unit: tDM/ha
         status: invalid
         reason: end-of-cycle live root biomass is reset to zero; derive from daily output
       sticsv11:
         source: mod_rapport.sti
-        field: msrac(n)
+        fields:
+        - msrac(n)
+        - msracmort
+        operation: sum
         source_unit: tDM/ha
         scale: 1.0
         offset: 0.0
@@ -959,6 +965,89 @@ variables:
         source: mod_rapport.sti
         field: totir
         source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_soil_evaporation_plt_mat:
+    column: CumE_from_plt_to_mat
+    description: Evaporation cumulee du sol sur la saison culturale
+    type: REAL
+    unit: mm
+    models:
+      stics:
+        source: mod_rapport.sti
+        field: cet_from_plt
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: cet_from_plt
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n_mineralized_from_plt_to_mat:
+    column: CumNMineralized_from_plt_to_mat
+    description: Azote mineralise cumule sur la saison culturale
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      stics:
+        source: mod_rapport.sti
+        field: Nmineral_from_plt
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: Nmineral_from_plt
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  drainage_from_plt_to_mat:
+    column: drainage_from_plt_to_mat
+    description: cumulative amount of water drained at the base of the soil profile during the crop cycle (planting to harvest)
+    type: REAL
+    unit: mm
+    required: false
+    models:
+      stics:
+        source: mod_rapport.sti
+        field: drain_from_plt
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: drain_from_plt
+        source_unit: mm
+        scale: 1.0
+        offset: 0.0
+        status: verified
+  cumulative_n_denitrified_from_plt_to_mat:
+    column: CumNDenitrified_from_plt_to_mat
+    description: Azote denitrifie cumule sur la saison culturale
+    type: REAL
+    unit: kgN/ha
+    required: false
+    models:
+      stics:
+        source: mod_rapport.sti
+        field: QNdenit_from_plt
+        source_unit: kgN/ha
+        scale: 1.0
+        offset: 0.0
+        status: verified
+      sticsv11:
+        source: mod_rapport.sti
+        field: QNdenit_from_plt
+        source_unit: kgN/ha
         scale: 1.0
         offset: 0.0
         status: verified

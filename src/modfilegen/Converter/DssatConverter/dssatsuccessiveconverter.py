@@ -834,6 +834,7 @@ def generate_rotation_input(
         crop,
         context["dailyoutput"],
         context["dssat_version"],
+        context["parameter_resolver"],
     )
 
     sections = parse_sections(read_generated_xfile(single_dir))
@@ -1191,6 +1192,7 @@ def process_single_row(row, context, directory_path, sequence_dir):
         crop,
         context["dailyoutput"],
         context["dssat_version"],
+        context["parameter_resolver"],
     )
     run_dssat_b(sequence_dir, directory_path, context["dt"], context["dssat_version"])
     summary = os.path.join(directory_path, f"Summary_{row['idsim']}.OUT")
